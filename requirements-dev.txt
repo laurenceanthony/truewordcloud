@@ -1,0 +1,5 @@
+# Development dependencies for testing and building
+pytest>=7.0.0
+pytest-cov>=3.0.0
+build>=0.10.0
+twine>=4.0.0

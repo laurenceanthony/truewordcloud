@@ -14,12 +14,12 @@ Key Features:
 
 Usage:
     from truewordcloud import TrueWordCloud
-    
+
     # Simple usage
     twc = TrueWordCloud(values={'hello': 100, 'world': 50})
     image = twc.generate()
     image.save('wordcloud.png')
-    
+
     # With options
     twc = TrueWordCloud(
         values={'hello': 100, 'world': 50},
@@ -50,6 +50,8 @@ class WordBox:
     x: float  # Center position
     y: float
     color: Tuple[int, int, int] = (0, 0, 0)
+    bbox_offset_x: int = 0  # getbbox left offset
+    bbox_offset_y: int = 0  # getbbox top offset
 
     @property
     def bbox(self) -> Tuple[float, float, float, float]:
@@ -80,13 +82,13 @@ class TrueWordCloud:
     proportional to input values, never arbitrarily resized.
 
     Two layout methods available:
-    
+
     'greedy' (default):
         - Fast spiral placement from center outward
         - Deterministic (same input → same output)
         - Creates radial/circular patterns
         - Best for: speed, reproducibility, circular aesthetics
-    
+
     'square':
         - Center-outward square packing with gap filling
         - Randomized (varied layouts each run)
@@ -102,6 +104,9 @@ class TrueWordCloud:
         background_color: RGB tuple for background (default: white)
         margin: Pixels between words (default: 2)
         color_func: Function to generate colors, receives (word, freq, norm_freq)
+        angle_divisor: For greedy method, controls angular granularity based on word size.
+                    Smaller values = coarser search (faster), larger = finer (better gap-filling).
+                    (default: 3)
     """
 
     def __init__(
@@ -114,18 +119,22 @@ class TrueWordCloud:
         background_color: Tuple[int, int, int] = (255, 255, 255),
         margin: int = 2,
         color_func: Optional[callable] = None,
+        angle_divisor: float = 3.0,
     ):
         self.values = values
         self.method = method.lower()
-        if self.method not in ['greedy', 'square']:
-            raise ValueError(f"method must be 'greedy' or 'square', got '{method}'")
-        
+        if self.method not in ["greedy", "square", "distance_transform"]:
+            raise ValueError(
+                f"method must be 'greedy', 'square', or 'distance_transform', got '{method}'"
+            )
+
         self.base_font_size = base_font_size
         self.font_path = font_path or self._get_default_font()
         self.min_font_size = min_font_size
         self.background_color = background_color
         self.margin = margin
         self.color_func = color_func or self._default_color_func
+        self.angle_divisor = angle_divisor
 
         self.words: List[WordBox] = []
 
@@ -163,7 +172,9 @@ class TrueWordCloud:
 
         raise RuntimeError("No TrueType fonts found on system")
 
-    def _default_color_func(self, word: str, freq: float, norm_freq: float) -> Tuple[int, int, int]:
+    def _default_color_func(
+        self, word: str, freq: float, norm_freq: float
+    ) -> Tuple[int, int, int]:
         """Default color function - black"""
         return (0, 0, 0)
 
@@ -212,6 +223,8 @@ class TrueWordCloud:
                 x=0,
                 y=0,
                 color=color,
+                bbox_offset_x=bbox[0],
+                bbox_offset_y=bbox[1],
             )
             word_boxes.append(word_box)
 
@@ -220,10 +233,12 @@ class TrueWordCloud:
 
         return word_boxes
 
-    def _layout_greedy(self, word_boxes: List[WordBox]) -> List[WordBox]:
+    def _layout_greedy(
+        self, word_boxes: List[WordBox], mask: Optional[np.ndarray] = None
+    ) -> List[WordBox]:
         """
         Greedy spiral placement algorithm.
-        
+
         Fast and deterministic. Places largest word at center, then spirals
         outward to find non-overlapping positions for remaining words.
         """
@@ -240,20 +255,68 @@ class TrueWordCloud:
 
         # Place remaining words using spiral search
         for word_box in word_boxes[1:]:
-            position = self._find_position_spiral(word_box, placed_words)
+            if mask is not None:
+                position = self._find_position_spiral_with_mask(
+                    word_box, placed_words, mask
+                )
+            else:
+                position = self._find_position_spiral(word_box, placed_words)
             if position:
                 word_box.x, word_box.y = position
                 placed_words.append(word_box)
+        return placed_words
+
+    def _find_position_spiral_with_mask(
+        self, word_box: WordBox, placed_words: List[WordBox], mask: np.ndarray
+    ) -> Optional[Tuple[float, float]]:
+        """Find a non-overlapping position using spiral search, constrained by a mask (True=allowed, False=forbidden)."""
+        mask_h, mask_w = mask.shape
+        mask_cx, mask_cy = mask_w // 2, mask_h // 2
+
+        def mask_check(x, y, width, height):
+            left = int(mask_cx + x - width / 2)
+            top = int(mask_cy + y - height / 2)
+            right = left + width
+            bottom = top + height
+            if left < 0 or top < 0 or right > mask_w or bottom > mask_h:
+                return False
+            return mask[top:bottom, left:right].all()
+
+        max_radius = 2000
+        radius_step = 5
+        word_size = math.sqrt(word_box.width * word_box.height)
+        angle_step = max(5, min(30, int(word_size / self.angle_divisor)))
+        for radius in range(0, max_radius, radius_step):
+            for angle in range(0, 360, angle_step):
+                x = radius * math.cos(math.radians(angle))
+                y = radius * math.sin(math.radians(angle))
+                word_box.x = x
+                word_box.y = y
+                has_overlap = False
+                for placed_word in placed_words:
+                    if word_box.overlaps(placed_word, self.margin):
+                        has_overlap = True
+                        break
+                if not has_overlap and mask_check(
+                    x, y, word_box.width, word_box.height
+                ):
+                    return (x, y)
+        return None
 
         return placed_words
 
     def _find_position_spiral(
         self, word_box: WordBox, placed_words: List[WordBox]
     ) -> Optional[Tuple[float, float]]:
-        """Find a non-overlapping position using spiral search"""
+        """Find a non-overlapping position using spiral search with adaptive angle step"""
         max_radius = 2000
         radius_step = 5
-        angle_step = 30  # degrees
+
+        # Adaptive angle step based on word dimensions
+        # Smaller words use finer angular granularity to find gaps
+        # Larger words use coarser steps for speed
+        word_size = math.sqrt(word_box.width * word_box.height)
+        angle_step = max(5, min(30, int(word_size / self.angle_divisor)))
 
         for radius in range(0, max_radius, radius_step):
             for angle in range(0, 360, angle_step):
@@ -278,7 +341,7 @@ class TrueWordCloud:
     def _layout_square(self, word_boxes: List[WordBox]) -> List[WordBox]:
         """
         Center-outward square packing algorithm.
-        
+
         Maintains roughly square aspect ratio by trying positions in all
         four directions and choosing the one that keeps layout most square.
         Includes interior gap-filling for compact layouts.
@@ -379,14 +442,18 @@ class TrueWordCloud:
                 tolerance = best_squareness * 0.05 + 1.0
 
                 best_candidates = [
-                    m for m in candidate_metrics if abs(m[0] - best_squareness) <= tolerance
+                    m
+                    for m in candidate_metrics
+                    if abs(m[0] - best_squareness) <= tolerance
                 ]
 
                 best_distance = min(m[1] for m in best_candidates)
                 distance_tolerance = best_distance * 0.05 + 1.0
 
                 optimal_candidates = [
-                    m for m in best_candidates if abs(m[1] - best_distance) <= distance_tolerance
+                    m
+                    for m in best_candidates
+                    if abs(m[1] - best_distance) <= distance_tolerance
                 ]
 
                 _, _, x, y = random.choice(optimal_candidates)
@@ -421,7 +488,9 @@ class TrueWordCloud:
                 word_box.x = x
                 word_box.y = y
 
-                if not any(self._boxes_overlap(word_box, placed) for placed in placed_words):
+                if not any(
+                    self._boxes_overlap(word_box, placed) for placed in placed_words
+                ):
                     return (x, y)
 
         return None
@@ -441,7 +510,9 @@ class TrueWordCloud:
         right2 += self.margin
         bottom2 += self.margin
 
-        return not (right1 <= left2 or right2 <= left1 or bottom1 <= top2 or bottom2 <= top1)
+        return not (
+            right1 <= left2 or right2 <= left1 or bottom1 <= top2 or bottom2 <= top1
+        )
 
     def _calculate_bounding_box(
         self, word_boxes: List[WordBox]
@@ -457,21 +528,25 @@ class TrueWordCloud:
 
         return (min_x, min_y, max_x, max_y)
 
-    def generate(self) -> Image.Image:
-        """Generate the word cloud image."""
-        # Calculate true proportional font sizes
+    def generate(self, mask: Optional[Image.Image] = None) -> Image.Image:
+        """Generate the word cloud image. For 'distance_transform', mask is optional: if not supplied, use a square canvas."""
         font_sizes = self._calculate_font_sizes()
-
-        # Measure words at their true sizes
         word_boxes = self._measure_words(font_sizes)
 
-        # Layout using selected method
-        if self.method == 'greedy':
+        if self.method == "greedy":
             print(f"Generating with greedy spiral algorithm...")
-            word_boxes = self._layout_greedy(word_boxes)
-        else:  # square
+            mask_array = None
+            if mask is not None:
+                mask_array = np.array(mask.convert("L")) < 128
+            word_boxes = self._layout_greedy(word_boxes, mask=mask_array)
+        elif self.method == "square":
             print(f"Generating with center-outward square packing...")
             word_boxes = self._layout_square(word_boxes)
+        elif self.method == "distance_transform":
+            print(f"Generating with distance transform packing...")
+            word_boxes, mask_shape = self._layout_distance_transform(word_boxes, mask)
+        else:
+            raise ValueError(f"Unknown method: {self.method}")
 
         # Calculate minimum bounding box
         min_x, min_y, max_x, max_y = self._calculate_bounding_box(word_boxes)
@@ -490,15 +565,17 @@ class TrueWordCloud:
 
         for word_box in word_boxes:
             font = ImageFont.truetype(self.font_path, word_box.font_size)
-            x = word_box.x - word_box.width / 2 + offset_x
-            y = word_box.y - word_box.height / 2 + offset_y
+            x = word_box.x - word_box.width / 2 + offset_x - word_box.bbox_offset_x
+            y = word_box.y - word_box.height / 2 + offset_y - word_box.bbox_offset_y
             draw.text((x, y), word_box.word, font=font, fill=word_box.color)
 
         return image
 
-    def generate_with_stats(self) -> Tuple[Image.Image, Dict]:
-        """Generate word cloud and return statistics."""
-        image = self.generate()
+    def generate_with_stats(
+        self, mask: Optional[Image.Image] = None
+    ) -> Tuple[Image.Image, Dict]:
+        """Generate word cloud and return statistics. For 'distance_transform', mask is optional: if not supplied, use a square canvas."""
+        image = self.generate(mask=mask)
         font_sizes = self._calculate_font_sizes()
 
         stats = {
@@ -510,6 +587,113 @@ class TrueWordCloud:
 
         return image, stats
 
+    def _estimate_initial_mask_size(self, word_boxes, mask_img=None):
+        """
+        Estimate initial mask/canvas size based on total word area and mask aspect ratio.
+        If mask_img is provided, preserve its aspect ratio.
+        Returns (width, height)
+        """
+        total_area = sum(wb.width * wb.height for wb in word_boxes)
+        if mask_img is not None:
+            aspect = mask_img.width / mask_img.height
+            h = int((total_area / aspect) ** 0.5)
+            w = int(h * aspect)
+        else:
+            # Square canvas
+            w = h = int(total_area**0.5)
+        return max(w, 1), max(h, 1)
+
+    def _layout_distance_transform(self, word_boxes, mask_img):
+        """
+        Distance transform packing with dynamic mask/canvas resizing.
+        mask_img: PIL Image (mode 'L'), 0=forbidden, 255=allowed. If None, use a square canvas.
+        """
+
+        import numpy as np
+        from scipy.ndimage import distance_transform_edt
+        from PIL import Image
+
+        # 1. Estimate initial mask size
+        if mask_img is not None:
+            init_w, init_h = self._estimate_initial_mask_size(word_boxes, mask_img)
+            mask_resized = mask_img.resize((init_w, init_h), resample=Image.NEAREST)
+            mask = (
+                np.array(mask_resized) < 128
+            )  # True=allowed (black), False=forbidden (white)
+        else:
+            # No mask: use a square canvas, all allowed
+            init_w, init_h = self._estimate_initial_mask_size(word_boxes, None)
+            mask = np.ones((init_h, init_w), dtype=bool)
+
+        placed_words = []
+        scale_factor = 1.1  # 10% grow each time if needed
+        max_attempts = 20
+        attempt = 0
+
+        while attempt < max_attempts:
+            mask_working = mask.copy()
+            placed_words.clear()
+            failed = False
+
+            for word_box in word_boxes:
+                # Compute distance transform (distance to forbidden)
+                dist = distance_transform_edt(mask_working)
+                # Find all positions where word fits (distance >= min required)
+                min_dist = min(word_box.width, word_box.height) / 2
+                candidates = np.argwhere(dist >= min_dist)
+                if len(candidates) == 0:
+                    failed = True
+                    break
+                # Sort candidates by distance (fattest spots first)
+                candidate_distances = dist[candidates[:, 0], candidates[:, 1]]
+                sorted_indices = np.argsort(-candidate_distances)
+                found_position = False
+                for idx in sorted_indices:
+                    cy, cx = candidates[idx]
+                    # Set word position in word cloud coordinates
+                    word_box.x = cx - mask.shape[1] // 2
+                    word_box.y = cy - mask.shape[0] // 2
+                    # Check for overlap with already placed words
+                    has_overlap = False
+                    for placed_word in placed_words:
+                        if word_box.overlaps(placed_word, self.margin):
+                            has_overlap = True
+                            break
+                    if not has_overlap:
+                        # Place word here
+                        placed_words.append(word_box)
+                        # Mark region as filled (set to False)
+                        left = int(cx - word_box.width / 2)
+                        top = int(cy - word_box.height / 2)
+                        right = left + word_box.width
+                        bottom = top + word_box.height
+                        mask_working[
+                            max(0, top) : min(mask.shape[0], bottom),
+                            max(0, left) : min(mask.shape[1], right),
+                        ] = False
+                        found_position = True
+                        break
+                if not found_position:
+                    failed = True
+                    break
+
+            if not failed:
+                # All words placed
+                return placed_words, mask.shape
+            # If failed, scale up mask and try again
+            attempt += 1
+            new_w = int(mask.shape[1] * scale_factor)
+            new_h = int(mask.shape[0] * scale_factor)
+            if mask_img is not None:
+                mask_img = mask_img.resize((new_w, new_h), resample=Image.NEAREST)
+                mask = np.array(mask_img) < 128  # black=allowed, white=forbidden
+            else:
+                mask = np.ones((new_h, new_w), dtype=bool)
+
+        raise RuntimeError(
+            "Could not fit all words in mask after multiple attempts. Try increasing max_attempts or check mask/word sizes."
+        )
+
 
 def main():
     """Test function for TrueWordCloud"""
@@ -519,22 +703,56 @@ def main():
 
     values = {
         "python": 100,
-        "data": 80,
-        "science": 75,
-        "visualization": 60,
-        "frequency": 50,
-        "proportional": 45,
-        "word": 40,
-        "cloud": 40,
-        "layout": 30,
-        "algorithm": 25,
-        "packing": 20,
-        "greedy": 15,
-        "dynamic": 10,
+        "data": 98,
+        "science": 96,
+        "visualization": 94,
+        "frequency": 92,
+        "proportional": 90,
+        "word": 88,
+        "cloud": 86,
+        "layout": 84,
+        "algorithm": 82,
+        "packing": 80,
+        "greedy": 78,
+        "dynamic": 76,
+        "analysis": 74,
+        "text": 72,
+        "font": 70,
+        "size": 68,
+        "canvas": 66,
+        "mask": 64,
+        "image": 62,
+        "draw": 60,
+        "color": 58,
+        "random": 56,
+        "spiral": 54,
+        "square": 52,
+        "compact": 50,
+        "gap": 48,
+        "fill": 46,
+        "center": 44,
+        "outward": 42,
+        "method": 40,
+        "test": 38,
+        "true": 36,
+        "proportion": 34,
+        "relationship": 32,
+        "input": 30,
+        "output": 28,
+        "statistics": 26,
+        "dynamic": 24,
+        "resize": 22,
+        "transform": 20,
+        "distance": 18,
+        "edge": 16,
+        "background": 14,
+        "white": 12,
+        "black": 10,
     }
 
     print(f"\nInput: {len(values)} words")
     print(f"Value range: {min(values.values())} to {max(values.values())}")
+    # values = dict(list(values.items())[0:20])  # Use only top 20 for testing to speed up
 
     # Test greedy method
     print("\n" + "=" * 70)
@@ -542,7 +760,7 @@ def main():
     print("=" * 70)
     twc_greedy = TrueWordCloud(
         values=values,
-        method='greedy',
+        method="greedy",
         base_font_size=100,
         min_font_size=10,
         background_color=(255, 255, 255),
@@ -559,9 +777,10 @@ def main():
     print("\n" + "=" * 70)
     print("Testing SQUARE method...")
     print("=" * 70)
+
     twc_square = TrueWordCloud(
         values=values,
-        method='square',
+        method="square",
         base_font_size=100,
         min_font_size=10,
         background_color=(255, 255, 255),
@@ -573,6 +792,56 @@ def main():
     print(f"✓ Font range: {stats['size_range'][0]}-{stats['size_range'][1]}pt")
     print(f"✓ Method: {stats['method']}")
     print(f"✓ Saved: truewordcloud_square_test.png")
+
+    # Test distance_transform method
+    print("\n" + "=" * 70)
+    print("Testing DISTANCE TRANSFORM method...")
+    print("=" * 70)
+    from PIL import Image as PILImage, ImageDraw as PILImageDraw
+
+    # Create a simple circular mask (black=allowed, white=forbidden)
+    mask_size = 400
+    # Start with a white image (all forbidden)
+    mask_img = PILImage.new(
+        "L", (mask_size, mask_size), 255
+    )  # white background (forbidden)
+    draw = PILImageDraw.Draw(mask_img)
+    # Draw a black circle in the center (allowed region)
+    draw.ellipse(
+        (20, 20, mask_size - 20, mask_size - 20), fill=0
+    )  # black circle (allowed)
+    # Optionally save the mask for inspection
+    # mask_img.save("truewordcloud_test_mask_circle.png")
+
+    twc_dist = TrueWordCloud(
+        values=values,
+        method="distance_transform",
+        base_font_size=100,
+        min_font_size=10,
+        background_color=(255, 255, 255),
+        margin=3,
+    )
+    image, stats = twc_dist.generate_with_stats(mask=mask_img)
+    image.save("truewordcloud_distance_transform_test.png")
+    print(f"✓ Canvas size: {stats['canvas_size'][0]}×{stats['canvas_size'][1]} pixels")
+    print(f"✓ Font range: {stats['size_range'][0]}-{stats['size_range'][1]}pt")
+    print(f"✓ Method: {stats['method']}")
+    print(f"✓ Saved: truewordcloud_distance_transform_test.png")
+
+    # Test special case: applying a mask to the greedy method
+    # Power transform to reduce Zipfian distribution severity
+    POWER_TRANSFORM = 0.6
+    values = {word: freq**POWER_TRANSFORM for word, freq in values.items()}
+
+    # Load mask (black=allowed, white=forbidden)
+    mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
+    # Generate word cloud with spiral layout and mask
+    twc = TrueWordCloud(
+        values=values, method="greedy", base_font_size=80, min_font_size=10
+    )
+    image = twc.generate(mask=mask_img)
+    image.save("truewordcloud_greedy_mask_alice_test.png")
+    print("✓ Saved: truewordcloud_greedy_mask_alice_test.png")
 
 
 if __name__ == "__main__":

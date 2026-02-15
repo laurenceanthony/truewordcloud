@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="truewordcloud",
-    version="1.0.0",
+    version="1.1.0",
     author="Laurence Anthony",
     author_email="anthony@antlabsolutions.com",
     description="Value-proportional word cloud generator with true size relationships",
@@ -35,7 +35,7 @@ setup(
     install_requires=[
         "Pillow>=8.0.0",
         "numpy>=1.19.0",
-        "matplotlib>=3.3.0",
+        "scipy>=1.5.0",
     ],
     keywords="wordcloud visualization text-analysis frequency linguistics data-visualization",
     project_urls={

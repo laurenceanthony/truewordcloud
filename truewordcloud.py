@@ -68,7 +68,7 @@ class TrueWordCloud:
     def __init__(
         self,
         values: Dict[str, float],
-        method: str = "greedy",
+        method: str = "distance_transform",
         base_font_size: int = 100,
         font_path: Optional[str] = None,
         min_font_size: int = 10,

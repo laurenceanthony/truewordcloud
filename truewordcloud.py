@@ -1148,9 +1148,10 @@ class TrueWordCloud:
         x_wc = xs - mask_cx
         y_wc = ys - mask_cy
 
-        inside = (x_wc >= min_x) & (x_wc <= max_x) & (y_wc >= min_y) & (y_wc <= max_y)
-        x_wc = x_wc[inside]
-        y_wc = y_wc[inside]
+        # removed because it tends to delete valid outline pixels that lie just outside the word bbox, especially with larger padding
+        # inside = (x_wc >= min_x) & (x_wc <= max_x) & (y_wc >= min_y) & (y_wc <= max_y)
+        # x_wc = x_wc[inside]
+        # y_wc = y_wc[inside]
 
         # wordcloud -> image coords
         px = np.rint(x_wc - min_x + padding).astype(int)

@@ -7,6 +7,7 @@ This file demonstrates various use cases for TrueWordCloud.
 
 import csv
 from truewordcloud import TrueWordCloud
+from PIL import Image as PILImage
 
 
 def example_basic():
@@ -370,7 +371,7 @@ def example_from_csv_with_stoplist():
     print("✓ Distance Transform: examples/distance_transform_csv.png")
 
 
-def example_distance_transform_with_mask():
+def example_with_mask():
     """Distance transform layout with a heart-shaped mask using CSV and stoplist."""
     print("\n" + "=" * 70)
     print("Example 9: Distance Transform with Heart Mask")
@@ -398,7 +399,7 @@ def example_distance_transform_with_mask():
                 values[word] = freq
 
     # Use top 40 words for better visualization
-    sorted_words = sorted(values.items(), key=lambda x: x[1], reverse=True)[:40]
+    sorted_words = sorted(values.items(), key=lambda x: x[1], reverse=True)[:80]
     values = dict(sorted_words)
 
     # Apply power transform
@@ -410,43 +411,62 @@ def example_distance_transform_with_mask():
     )
 
     # Load heart-shaped mask (black=allowed, white=forbidden)
-    from PIL import Image as PILImage
+    alice_mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
 
-    # Distance greedy layout with mask
-    twc_greedy = TrueWordCloud(
-        values=values_transformed, method="greedy", base_font_size=70, min_font_size=12
-    )
-    mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
-    image_greedy = twc_greedy.generate(mask=mask_img)
-    image_greedy.save("examples/greedy_mask_heart.png")
-    print("✓ Greedy with Inverted Heart Mask: examples/greedy_mask_heart.png")
+    # # Distance greedy layout with mask
+    # twc_greedy = TrueWordCloud(
+    #     values=values_transformed, method="greedy", base_font_size=70, min_font_size=12
+    # )
+    # # mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
+    # # image_greedy = twc_greedy.generate(mask=mask_img)
+    # # image_greedy.save("examples/greedy_mask_heart.png")
+    # # print("✓ Greedy with Heart Mask: examples/greedy_mask_heart.png")
 
-    mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
-    image_greedy = twc_greedy.generate(mask=mask_img)
-    image_greedy.save("examples/greedy_mask_alice.png")
-    print("✓ Greedy with Inverted Alice Mask: examples/greedy_mask_alice.png")
+    # image_greedy = twc_greedy.generate(
+    #     mask=alice_mask_img,
+    #     mask_outline=True,
+    #     mask_outline_color="#FF0000",
+    #     mask_outline_width=2,
+    # )
+    # image_greedy.save("examples/greedy_mask_alice.png")
+    # print("✓ Greedy with Alice Mask: examples/greedy_mask_alice.png")
+
+    # # Distance square layout with mask
+    # twc_square = TrueWordCloud(
+    #     values=values_transformed, method="square", base_font_size=70, min_font_size=12
+    # )
+    # image_square = twc_square.generate(
+    #     mask=alice_mask_img,
+    #     mask_outline=True,
+    #     mask_outline_color="#FF0000",
+    #     mask_outline_width=2,
+    # )
+    # image_square.save("examples/square_mask_alice.png")
+    # print("✓ Square with Inverted Alice Mask: examples/square_mask_alice.png")
 
     # Distance transform layout with mask
     twc_dist = TrueWordCloud(
         values=values_transformed,
         method="distance_transform",
-        base_font_size=70,
-        min_font_size=12,
     )
 
-    mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
-    image_dist = twc_dist.generate(mask=mask_img)
-    image_dist.save("examples/distance_transform_mask_heart.png")
-    print(
-        "✓ Distance Transform with Inverted Heart Mask: examples/distance_transform_mask_heart.png"
+    image_dist = twc_dist.generate(
+        mask=alice_mask_img,
+        mask_outline=True,
+        mask_outline_color="#FF0000",
+        mask_outline_width=2,
     )
-
-    mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
-    image_dist = twc_dist.generate(mask=mask_img)
     image_dist.save("examples/distance_transform_mask_alice.png")
     print(
         "✓ Distance Transform with Inverted Alice Mask: examples/distance_transform_mask_alice.png"
     )
+
+    # mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
+    # image_dist = twc_dist.generate(mask=mask_img, mask_outline=False)
+    # image_dist.save("examples/distance_transform_mask_alice.png")
+    # print(
+    #     "✓ Distance Transform with Inverted Alice Mask: examples/distance_transform_mask_alice.png"
+    # )
 
 
 def main():
@@ -459,14 +479,14 @@ def main():
     print("  • Greedy: faster, deterministic, radial pattern")
     print("  • Square: compact, randomized, fills gaps")
 
-    example_basic()
-    example_keyness()
-    example_custom_colors()
-    example_categorical_colors()
-    example_large_dataset()
-    example_custom_font()
-    example_from_csv_with_stoplist()
-    example_distance_transform_with_mask()
+    # example_basic()
+    # example_keyness()
+    # example_custom_colors()
+    # example_categorical_colors()
+    # example_large_dataset()
+    # example_custom_font()
+    # example_from_csv_with_stoplist()
+    example_with_mask()
 
     print("\n" + "=" * 70)
     print("✓ All examples generated successfully!")

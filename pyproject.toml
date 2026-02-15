@@ -1,44 +1,23 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "truewordcloud"
-version = "1.0.0"
+version = "1.1.0"
 description = "Value-proportional word cloud generator with true size relationships"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
-authors = [
-    {name = "Laurence Anthony", email = "anthony@antlabsolutions.com"}
-]
+authors = [{name = "Laurence Anthony", email = "anthony@antlabsolutions.com"}]
 keywords = ["wordcloud", "visualization", "text-analysis", "frequency", "linguistics", "data-visualization"]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Science/Research",
-    "Intended Audience :: Developers",
-    "Topic :: Scientific/Engineering :: Visualization",
-    "Topic :: Text Processing :: Linguistic",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-
 dependencies = [
-    "Pillow>=8.0.0",
-    "numpy>=1.19.0",
-    "matplotlib>=3.3.0",
+    "Pillow>=8.0.0", "numpy>=1.19.0", "scipy>=1.5.0"
+]
+classifiers = [
+    "Development Status :: 4 - Beta", "Intended Audience :: Science/Research", "Intended Audience :: Developers", "Topic :: Scientific/Engineering :: Visualization", "Topic :: Text Processing :: Linguistic", "License :: OSI Approved :: MIT License", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3.7", "Programming Language :: Python :: 3.8", "Programming Language :: Python :: 3.9", "Programming Language :: Python :: 3.10", "Programming Language :: Python :: 3.11"
 ]
 
 [project.urls]
-Homepage = "https://github.com/laurenceanthony/truewordcloud"
-"Bug Reports" = "https://github.com/laurenceanthony/truewordcloud/issues"
+BugReports = "https://github.com/laurenceanthony/truewordcloud/issues"
 Source = "https://github.com/laurenceanthony/truewordcloud"
-
-[tool.setuptools]
-py-modules = ["truewordcloud"]

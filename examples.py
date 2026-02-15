@@ -10,6 +10,57 @@ from truewordcloud import TrueWordCloud
 from PIL import Image as PILImage
 
 
+def get_example_data():
+    """Helper function to load example data from CSV and stoplist"""
+    # Load stoplist
+    stoplist = set()
+    with open("examples/assets/sample_stoplist.txt", "r", encoding="utf-8") as f:
+        for line in f:
+            word = line.strip().lower()
+            if word:
+                stoplist.add(word)
+
+    # Read CSV file
+    values = {}
+    with open("examples/assets/sample_wordlist.csv", "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            row = {k.strip(): v.strip() for k, v in row.items()}
+            word = row["Type"]
+            freq = int(row["Freq"])
+            if word.isalpha() and len(word) > 1 and word.lower() not in stoplist:
+                values[word] = freq
+
+    # Load stoplist
+    stoplist = set()
+    with open("examples/assets/sample_stoplist.txt", "r", encoding="utf-8") as f:
+        for line in f:
+            word = line.strip().lower()
+            if word:
+                stoplist.add(word)
+
+    # Read CSV file
+    values = {}
+    with open("examples/assets/sample_wordlist.csv", "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            row = {k.strip(): v.strip() for k, v in row.items()}
+            word = row["Type"]
+            freq = int(row["Freq"])
+            if word.isalpha() and len(word) > 1 and word.lower() not in stoplist:
+                values[word] = freq
+
+    # Use top 40 words for better visualization
+    sorted_words = sorted(values.items(), key=lambda x: x[1], reverse=True)[:80]
+    values = dict(sorted_words)
+
+    # Apply power transform to reduce frequency range
+    POWER_TRANSFORM = 0.6
+    values = {word: freq**POWER_TRANSFORM for word, freq in values.items()}
+
+    return values
+
+
 def example_basic():
     """Basic usage with word frequencies"""
     print("\n" + "=" * 70)
@@ -41,7 +92,7 @@ def example_basic():
     image_square.save("examples/square_basic.png")
     print("✓ Saved: examples/square_basic.png")
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(values=word_frequencies, method="distance_transform")
     image_dist = twc_dist.generate()
     image_dist.save("examples/distance_transform_basic.png")
@@ -81,7 +132,7 @@ def example_keyness():
     image_square.save("examples/square_keyness.png")
     print("✓ Saved: examples/square_keyness.png")
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(
         values=keyness_scores, method="distance_transform", base_font_size=80, margin=4
     )
@@ -126,7 +177,7 @@ def example_custom_colors():
     image_square.save("examples/square_colors.png")
     print("✓ Saved: examples/square_colors.png")
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
@@ -186,7 +237,7 @@ def example_categorical_colors():
     image_square.save("examples/square_categorical.png")
     print("✓ Saved: examples/square_categorical.png")
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(
         values=values, method="distance_transform", color_func=category_color
     )
@@ -227,7 +278,7 @@ def example_large_dataset():
         f"✓ Square: {stats_square['num_words']} words, {stats_square['canvas_size'][0]}×{stats_square['canvas_size'][1]}px"
     )
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
@@ -279,7 +330,7 @@ def example_custom_font():
     image_square.save("examples/square_custom_font.png")
     print(f"✓ Square: Saved with {'custom' if font_path else 'default'} font")
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
@@ -294,58 +345,13 @@ def example_custom_font():
 
 
 def example_from_csv_with_stoplist():
-    """Load word frequencies from CSV file with stoplist filtering"""
-    print("\n" + "=" * 70)
-    print("Example 8: Loading from CSV with Stoplist")
-    print("=" * 70)
+    """Using CSV input with a stoplist to filter out common words"""
 
-    # Power transform to reduce Zipfian distribution severity
-    # Real word frequencies follow a Zipfian distribution (few very common words,
-    # many rare words). Applying a power transform makes visualizations more balanced.
-    # Tune this value: 1.0 = no change, 0.5 = square root, 0.6-0.7 = recommended range
-    POWER_TRANSFORM = 0.6
-
-    # Load stoplist
-    stoplist = set()
-    with open("examples/assets/sample_stoplist.txt", "r", encoding="utf-8") as f:
-        for line in f:
-            word = line.strip().lower()
-            if word:
-                stoplist.add(word)
-
-    print(f"Loaded {len(stoplist)} stopwords from sample_stoplist.txt")
-
-    # Read CSV file
-    values = {}
-    with open("examples/assets/sample_wordlist.csv", "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            # Strip whitespace from keys and values
-            row = {k.strip(): v.strip() for k, v in row.items()}
-            word = row["Type"]
-            freq = int(row["Freq"])
-            # Filter: keep only alphabetic words (no punctuation) and not in stoplist
-            if word.isalpha() and len(word) > 1 and word.lower() not in stoplist:
-                values[word] = freq
-
-    # Use top 40 words for better visualization
-    sorted_words = sorted(values.items(), key=lambda x: x[1], reverse=True)[:40]
-    values = dict(sorted_words)
-
-    # Apply power transform to reduce frequency range
-    values_transformed = {word: freq**POWER_TRANSFORM for word, freq in values.items()}
-
-    print(f"Loaded {len(values)} words from CSV (after filtering stopwords)")
-    print(
-        f"Applied power transform (exponent={POWER_TRANSFORM}) to reduce Zipfian drop-off"
-    )
-    print(
-        f"Applied power transform (exponent={POWER_TRANSFORM}) to reduce Zipfian drop-off"
-    )
+    values = get_example_data()
 
     # Greedy layout
     twc_greedy = TrueWordCloud(
-        values=values_transformed, method="greedy", base_font_size=70, min_font_size=12
+        values=values, method="greedy", base_font_size=70, min_font_size=12
     )
     image_greedy = twc_greedy.generate()
     image_greedy.save("examples/greedy_csv.png")
@@ -353,15 +359,15 @@ def example_from_csv_with_stoplist():
 
     # Square layout
     twc_square = TrueWordCloud(
-        values=values_transformed, method="square", base_font_size=70, min_font_size=12
+        values=values, method="square", base_font_size=70, min_font_size=12
     )
     image_square = twc_square.generate()
     image_square.save("examples/square_csv.png")
     print("✓ Square: examples/square_csv.png")
 
-    # Distance transform layout (no mask)
+    # Distance transform layout
     twc_dist = TrueWordCloud(
-        values=values_transformed,
+        values=values,
         method="distance_transform",
         base_font_size=70,
         min_font_size=12,
@@ -372,121 +378,176 @@ def example_from_csv_with_stoplist():
 
 
 def example_with_mask():
-    """Distance transform layout with a heart-shaped mask using CSV and stoplist."""
-    print("\n" + "=" * 70)
-    print("Example 9: Distance Transform with Heart Mask")
-    print("=" * 70)
-
-    POWER_TRANSFORM = 0.6
-
-    # Load stoplist
-    stoplist = set()
-    with open("examples/assets/sample_stoplist.txt", "r", encoding="utf-8") as f:
-        for line in f:
-            word = line.strip().lower()
-            if word:
-                stoplist.add(word)
-
-    # Read CSV file
-    values = {}
-    with open("examples/assets/sample_wordlist.csv", "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            row = {k.strip(): v.strip() for k, v in row.items()}
-            word = row["Type"]
-            freq = int(row["Freq"])
-            if word.isalpha() and len(word) > 1 and word.lower() not in stoplist:
-                values[word] = freq
-
-    # Use top 40 words for better visualization
-    sorted_words = sorted(values.items(), key=lambda x: x[1], reverse=True)[:80]
-    values = dict(sorted_words)
-
-    # Apply power transform
-    values_transformed = {word: freq**POWER_TRANSFORM for word, freq in values.items()}
-
-    print(f"Loaded {len(values)} words from CSV (after filtering stopwords)")
-    print(
-        f"Applied power transform (exponent={POWER_TRANSFORM}) to reduce Zipfian drop-off"
-    )
+    """Using a heart-shaped mask to constrain word placement"""
+    values = get_example_data()
 
     # Load heart-shaped mask (black=allowed, white=forbidden)
-    alice_mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
+    mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
 
-    # # Distance greedy layout with mask
-    # twc_greedy = TrueWordCloud(
-    #     values=values_transformed, method="greedy", base_font_size=70, min_font_size=12
-    # )
-    # # mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
-    # # image_greedy = twc_greedy.generate(mask=mask_img)
-    # # image_greedy.save("examples/greedy_mask_heart.png")
-    # # print("✓ Greedy with Heart Mask: examples/greedy_mask_heart.png")
+    # Distance greedy layout with mask
+    twc_greedy = TrueWordCloud(
+        values=values, method="greedy", base_font_size=70, min_font_size=12
+    )
+    image_greedy = twc_greedy.generate(
+        mask=mask_img,
+        mask_outline=True,
+        mask_outline_color="#000000",
+        mask_outline_width=2,
+    )
+    image_greedy.save("examples/greedy_mask_heart.png")
+    print("✓ Greedy with Heart Mask: examples/greedy_mask_heart.png")
 
-    # image_greedy = twc_greedy.generate(
-    #     mask=alice_mask_img,
-    #     mask_outline=True,
-    #     mask_outline_color="#FF0000",
-    #     mask_outline_width=2,
-    # )
-    # image_greedy.save("examples/greedy_mask_alice.png")
-    # print("✓ Greedy with Alice Mask: examples/greedy_mask_alice.png")
-
-    # # Distance square layout with mask
-    # twc_square = TrueWordCloud(
-    #     values=values_transformed, method="square", base_font_size=70, min_font_size=12
-    # )
-    # image_square = twc_square.generate(
-    #     mask=alice_mask_img,
-    #     mask_outline=True,
-    #     mask_outline_color="#FF0000",
-    #     mask_outline_width=2,
-    # )
-    # image_square.save("examples/square_mask_alice.png")
-    # print("✓ Square with Inverted Alice Mask: examples/square_mask_alice.png")
+    # Distance square layout with mask
+    twc_square = TrueWordCloud(
+        values=values, method="square", base_font_size=70, min_font_size=12
+    )
+    image_square = twc_square.generate(
+        mask=mask_img,
+        mask_outline=True,
+        mask_outline_color="#000000",
+        mask_outline_width=2,
+    )
+    image_square.save("examples/square_mask_heart.png")
+    print("✓ Square with Heart Mask: examples/square_mask_heart.png")
 
     # Distance transform layout with mask
     twc_dist = TrueWordCloud(
-        values=values_transformed,
+        values=values,
         method="distance_transform",
     )
-
     image_dist = twc_dist.generate(
-        mask=alice_mask_img,
+        mask=mask_img,
         mask_outline=True,
-        mask_outline_color="#FF0000",
+        mask_outline_color="#000000",
         mask_outline_width=2,
     )
-    image_dist.save("examples/distance_transform_mask_alice.png")
+    image_dist.save("examples/distance_transform_mask_heart.png")
     print(
-        "✓ Distance Transform with Inverted Alice Mask: examples/distance_transform_mask_alice.png"
+        "✓ Distance Transform with Heart Mask: examples/distance_transform_mask_heart.png"
     )
 
-    # mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
-    # image_dist = twc_dist.generate(mask=mask_img, mask_outline=False)
-    # image_dist.save("examples/distance_transform_mask_alice.png")
-    # print(
-    #     "✓ Distance Transform with Inverted Alice Mask: examples/distance_transform_mask_alice.png"
-    # )
+
+def example_with_colored_mask():
+    """Square layout with a colored mask and mask-derived word colors."""
+    values = get_example_data()
+
+    # Load heart-shaped mask (black=allowed, white=forbidden)
+    color_mask_img = PILImage.open("examples/assets/mask_heart_color.png")
+
+    # Greedy layout with colored mask
+    twc_color = TrueWordCloud(
+        values=values,
+        method="greedy",  # try also: "greedy", "distance_transform"
+        base_font_size=50,
+        min_font_size=1,
+        margin=3,
+        max_attempts=20,
+        scale_factor=1.3,
+        seed=123,
+        use_mask_colors=True,
+        mask_shape_mode="colors",
+    )
+
+    image, stats = twc_color.generate_with_stats(
+        mask=color_mask_img,
+        mask_outline=True,
+        mask_outline_color="#00AAFF",
+        mask_outline_width=2,
+    )
+    image.save("examples/greedy_mask_heart_colored.png")
+    print("✓ Greedy with colored Heart Mask: examples/greedy_mask_heart_colored.png")
+    print(
+        f"✓ Stats: placed {stats['placed_words']} / {stats['num_words']} words, success={stats['success']}"
+    )
+
+    # Square layout with colored mask
+    twc_color_square = TrueWordCloud(
+        values=values,
+        method="square",
+        base_font_size=50,
+        min_font_size=1,
+        margin=3,
+        max_attempts=20,
+        scale_factor=1.3,
+        seed=123,
+        use_mask_colors=True,
+        mask_shape_mode="colors",
+    )
+    image_square, stats_square = twc_color_square.generate_with_stats(
+        mask=color_mask_img,
+        mask_outline=True,
+        mask_outline_color="#00AAFF",
+        mask_outline_width=2,
+    )
+    image_square.save("examples/square_mask_heart_colored.png")
+    print("✓ Square with colored Heart Mask: examples/square_mask_heart_colored.png")
+    print(
+        f"✓ Stats: placed {stats_square['placed_words']} / {stats_square['num_words']} words, success={stats_square['success']}"
+    )
+
+    # Distrance transform layout with colored mask
+    twc_color_dist = TrueWordCloud(
+        values=values,
+        method="distance_transform",
+        base_font_size=50,
+        min_font_size=1,
+        margin=3,
+        max_attempts=20,
+        scale_factor=1.3,
+        seed=123,
+        use_mask_colors=True,
+        mask_shape_mode="colors",
+    )
+    image_dist, stats_dist = twc_color_dist.generate_with_stats(
+        mask=color_mask_img,
+        mask_outline=True,
+        mask_outline_color="#00AAFF",
+        mask_outline_width=2,
+    )
+    image_dist.save("examples/distance_transform_mask_heart_colored.png")
+    print(
+        "✓ Distance Transform with colored Heart Mask: examples/distance_transform_mask_heart_colored.png"
+    )
+    print(
+        f"✓ Stats: placed {stats_dist['placed_words']} / {stats_dist['num_words']} words, success={stats_dist['success']}"
+    )
 
 
 def main():
-    """Run all examples"""
+    """Run all TrueWordCloud examples demonstrating different features and use cases."""
     print("\n" + "=" * 70)
     print("TrueWordCloud Examples")
     print("=" * 70)
     print("\nGenerating example word clouds...")
-    print("\nAll examples generate BOTH greedy and square layouts for comparison:")
+    print(
+        "\nAll examples generate greedy, square, and distance transform layouts for comparison:"
+    )
     print("  • Greedy: faster, deterministic, radial pattern")
     print("  • Square: compact, randomized, fills gaps")
+    print(
+        "  • Distance Transform: optimized for irrelegular shapes, slower, more organic"
+    )
 
-    # example_basic()
-    # example_keyness()
-    # example_custom_colors()
-    # example_categorical_colors()
-    # example_large_dataset()
-    # example_custom_font()
-    # example_from_csv_with_stoplist()
+    print("\n1. Basic word frequencies (example_basic)")
+    example_basic()
+    print("\n2. Keyness scores/statistical significance (example_keyness)")
+    example_keyness()
+    print("\n3. Custom color function (example_custom_colors)")
+    example_custom_colors()
+    print("\n4. Categorical colors by word type (example_categorical_colors)")
+    example_categorical_colors()
+    print("\n5. Large dataset with many words (example_large_dataset)")
+    example_large_dataset()
+    print("\n6. Custom font usage (example_custom_font)")
+    example_custom_font()
+    print("\n7. Load data from CSV with stoplist (example_from_csv_with_stoplist)")
+    example_from_csv_with_stoplist()
+    print("\n8. Use a heart-shaped mask (example_with_mask)")
     example_with_mask()
+    print(
+        "\n9. Use a colored mask and mask-derived word colors (example_with_colored_mask)"
+    )
+    example_with_colored_mask()
 
     print("\n" + "=" * 70)
     print("✓ All examples generated successfully!")

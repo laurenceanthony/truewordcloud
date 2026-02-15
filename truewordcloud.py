@@ -15,7 +15,7 @@ Key Features:
 """
 
 from PIL import Image as PILImage, ImageDraw as PILImageDraw, ImageFont as PILImageFont
-from scipy.ndimage import distance_transform_edt, binary_erosion
+from scipy.ndimage import distance_transform_edt, binary_erosion, binary_closing
 from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
 import math
@@ -77,10 +77,15 @@ class TrueWordCloud:
         seed: Optional[int] = None,
         max_attempts: int = 20,
         scale_factor: float = 1.2,
-        _last_attempts: int = 1,
+        use_mask_colors: bool = False,
+        mask_color_mode: str = "mean_ink",
+        mask_shape_mode: str = "no-colors",
     ):
+        self.use_mask_colors = use_mask_colors
+        self.mask_shape_mode = mask_shape_mode  # "black_allowed" | "nonwhite_allowed"
+        self.mask_color_mode = mask_color_mode  # "center" | "mean_ink"
+        self._mask_used_color_arr = None
         self.rng = random.Random(seed)
-
         self.values = values
         self.method = method.lower()
         if self.method not in ["greedy", "square", "distance_transform"]:
@@ -110,6 +115,9 @@ class TrueWordCloud:
         # The mask actually used for the final successful (or last) attempt
         self._mask_used_img: Optional[PILImage.Image] = None
         self._mask_used_allowed: Optional[np.ndarray] = None
+
+        # Track the number of attempts used in the last generation
+        self._last_attempts = 0
 
         # Glyph cache
         self._glyph_cache: Dict[Tuple[str, int], np.ndarray] = {}
@@ -167,13 +175,52 @@ class TrueWordCloud:
             font_sizes[word] = max(size, self.min_font_size)
         return font_sizes
 
-    def _mask_to_allowed(self, mask_img: PILImage.Image) -> np.ndarray:
-        """
-        Convert a PIL mask image to a boolean array:
-        - True  = allowed (black)
-        - False = forbidden (white)
-        """
-        return np.array(mask_img.convert("L")) < 128
+    # def _mask_to_allowed(
+    #     self,
+    #     mask_img: PILImage.Image,
+    #     *,
+    #     mode: str = "black_allowed",
+    #     bg_rgb=(255, 255, 255),
+    #     bg_tol: int = 18,  # try 12–30 depending on cutout quality
+    #     do_close: bool = True,
+    #     close_iters: int = 1,
+    # ) -> np.ndarray:
+    #     """
+    #     Convert a mask image to a boolean array where True=allowed.
+
+    #     mode:
+    #     - "black_allowed": classic mask (black allowed, white forbidden) using grayscale threshold.
+    #     - "nonwhite_allowed": treat near-white as background (forbidden), everything else allowed,
+    #                         using RGB distance-to-background (handles light colors better).
+    #     """
+    #     if mode == "black_allowed":
+    #         gray = np.array(mask_img.convert("L"), dtype=np.uint8)
+    #         return gray < 128
+
+    #     if mode == "nonwhite_allowed":
+    #         # Work in RGBA so we can also respect transparency if present
+    #         rgba = np.array(mask_img.convert("RGBA"), dtype=np.uint8)
+    #         rgb = rgba[..., :3].astype(np.int16)
+    #         alpha = rgba[..., 3].astype(np.int16)
+
+    #         bg = np.array(bg_rgb, dtype=np.int16)
+
+    #         # Squared Euclidean distance from background color (white by default)
+    #         d2 = np.sum((rgb - bg) ** 2, axis=-1)
+
+    #         # Near-white => forbidden. Far enough => allowed.
+    #         allowed = d2 > (bg_tol * bg_tol)
+
+    #         # If image has transparency, treat transparent pixels as background
+    #         allowed &= alpha > 0
+
+    #         # Optional: fill tiny holes caused by anti-aliased edges / compression artifacts
+    #         if do_close:
+    #             allowed = binary_closing(allowed, iterations=close_iters)
+
+    #         return allowed.astype(bool)
+
+    #     raise ValueError(f"Unknown mode: {mode}")
 
     def _measure_words(self, font_sizes: Dict[str, int]) -> List[WordBox]:
         word_boxes: List[WordBox] = []
@@ -312,6 +359,71 @@ class TrueWordCloud:
         region[glyph] = False
         mask_working[top:bottom, left:right] = region
 
+    def _apply_colors_from_mask(
+        self,
+        placed_words: List[WordBox],
+        mask_color_arr: np.ndarray,
+        mask_allowed: Optional[np.ndarray] = None,
+        *,
+        strategy: str = "median",  # "median" or "mean"
+    ) -> None:
+        """
+        Assign word_box.color by sampling the resized color mask under the word.
+
+        Coordinates:
+        - placed_words are in wordcloud coords centered at (0,0)
+        - mask_color_arr is in mask pixel coords [0..w-1, 0..h-1]
+        - we map via mask center (mask_cx, mask_cy)
+
+        If mask_allowed is provided, we only sample pixels that are allowed (True).
+        We also sample only glyph 'ink' pixels for better color fidelity.
+        """
+        if mask_color_arr is None:
+            return
+
+        h, w, _ = mask_color_arr.shape
+        mask_cx, mask_cy = w // 2, h // 2
+
+        for wb in placed_words:
+            # Region in mask pixel coords corresponding to this word's ink bbox
+            left = int(mask_cx + wb.x - wb.width / 2 - wb.bbox_offset_x)
+            top = int(mask_cy + wb.y - wb.height / 2 - wb.bbox_offset_y)
+            right = left + wb.width
+            bottom = top + wb.height
+
+            # Skip if out of bounds (shouldn't happen if placement used same checks, but safe)
+            if left < 0 or top < 0 or right > w or bottom > h:
+                continue
+
+            region_rgb = mask_color_arr[top:bottom, left:right, :]  # (hh, ww, 3)
+
+            # Glyph mask: True where ink exists
+            glyph = self._get_glyph_mask(wb)  # shape (hh, ww)
+
+            # Optionally restrict to allowed region too
+            if mask_allowed is not None:
+                allowed_region = mask_allowed[top:bottom, left:right]
+                sel = glyph & allowed_region
+            else:
+                sel = glyph
+
+            if not np.any(sel):
+                # Fallback: sample center pixel
+                cx = int(mask_cx + wb.x)
+                cy = int(mask_cy + wb.y)
+                if 0 <= cx < w and 0 <= cy < h:
+                    wb.color = tuple(int(c) for c in mask_color_arr[cy, cx])
+                continue
+
+            pixels = region_rgb[sel]  # (N,3)
+
+            if strategy == "mean":
+                rgb = np.mean(pixels, axis=0)
+            else:
+                rgb = np.median(pixels, axis=0)
+
+            wb.color = tuple(int(c) for c in rgb)
+
     # ----------------------------
     # Overlap + bbox helpers
     # ----------------------------
@@ -366,22 +478,52 @@ class TrueWordCloud:
 
         return max(w, 1), max(h, 1)
 
-    def _make_working_mask(
-        self,
-        word_boxes: List[WordBox],
-        mask_img: Optional[PILImage.Image],
-        w: int,
-        h: int,
-    ) -> Tuple[Optional[PILImage.Image], np.ndarray]:
+    def _make_working_mask(self, boxes, mask_img, w, h):
         """
-        Returns (mask_img_resized_or_none, mask_allowed_bool[h,w]).
-        True=allowed (black), False=forbidden (white).
+        Returns:
+        mask_resized_img: resized PIL image (RGBA for colors mode, L for no-colors mode)
+        mask_allowed:     bool array (h,w) True=allowed
+        mask_color_arr:   uint8 (h,w,3) or None
         """
         if mask_img is None:
-            return None, np.ones((h, w), dtype=bool)
+            return None, np.ones((h, w), dtype=bool), None
 
-        mask_resized = mask_img.resize((w, h), resample=PILImage.NEAREST).convert("L")
-        return mask_resized, self._mask_to_allowed(mask_resized)
+        # New simplified mode: "no-colors" or "colors"
+        mode = getattr(self, "mask_shape_mode", "no-colors")
+        if mode not in ("no-colors", "colors"):
+            raise ValueError("mask_shape_mode must be 'no-colors' or 'colors'")
+
+        if mode == "no-colors":
+            # Binary mask: black allowed, white not allowed
+            # Use NEAREST to preserve crisp edges
+            mask_resized = mask_img.convert("L").resize(
+                (w, h), resample=PILImage.NEAREST
+            )
+            gray = np.array(mask_resized, dtype=np.uint8)
+            mask_allowed = gray < 128
+            mask_color_arr = None  # no colors used in this mode
+
+        else:  # mode == "colors"
+            # Color mask: non-transparent allowed, transparent not allowed
+            # Use NEAREST for alpha to avoid "phantom" semi-transparent fringes
+            mask_resized = mask_img.convert("RGBA").resize(
+                (w, h), resample=PILImage.NEAREST
+            )
+            rgba = np.array(mask_resized, dtype=np.uint8)
+            alpha = rgba[..., 3]
+            mask_allowed = alpha > 0
+
+            # If you want word colors sampled from mask:
+            mask_color_arr = None
+            if getattr(self, "use_mask_colors", False):
+                mask_color_arr = rgba[..., :3].copy()
+
+        # Debug visualization: allowed should be BLACK
+        PILImage.fromarray(
+            np.where(mask_allowed, 0, 255).astype(np.uint8), mode="L"
+        ).save("dbg_allowed.png")
+
+        return mask_resized, mask_allowed, mask_color_arr
 
     def _layout_with_attempts(
         self, base_word_boxes: List[WordBox], mask_img: Optional[PILImage.Image]
@@ -414,9 +556,13 @@ class TrueWordCloud:
         for attempt in range(self.max_attempts):
             boxes = self._clone_word_boxes(base_word_boxes)
 
-            mask_resized_img, mask_allowed = self._make_working_mask(
+            mask_resized_img, mask_allowed, mask_color_arr = self._make_working_mask(
                 boxes, mask_img, w, h
             )
+
+            self._mask_used_img = mask_resized_img
+            self._mask_used_allowed = mask_allowed
+            self._mask_used_color_arr = mask_color_arr  # <-- NEW
 
             # Remember the mask/canvas used for *this attempt* (and ultimately the final one)
             self._mask_used_img = mask_resized_img
@@ -437,7 +583,27 @@ class TrueWordCloud:
 
             # Success = all words placed
             if len(placed) == len(base_word_boxes) and self.failure is None:
+
+                # Apply mask-based colors if enabled
+                if (
+                    getattr(self, "use_mask_colors", False)
+                    and self._mask_used_color_arr is not None
+                ):
+                    self._apply_colors_from_mask(
+                        placed,
+                        self._mask_used_color_arr,
+                        mask_allowed=self._mask_used_allowed,
+                        strategy="median",
+                    )
+
                 self._last_attempts = attempt + 1
+
+                if mask_allowed is not None:
+                    mask_img_to_save = PILImage.fromarray(
+                        np.where(mask_allowed, 0, 255).astype(np.uint8),
+                        mode="L",
+                    )
+                    mask_img_to_save.save("truewordcloud_mask_allowed.png")
                 return placed
 
             # Record failure info (non-fatal), then scale up and retry
@@ -462,6 +628,18 @@ class TrueWordCloud:
         # Out of attempts: return best partial
         self._last_attempts = self.max_attempts
         self.failure = last_failure
+
+        if (
+            getattr(self, "use_mask_colors", False)
+            and self._mask_used_color_arr is not None
+        ):
+            self._apply_colors_from_mask(
+                last_partial,
+                self._mask_used_color_arr,
+                mask_allowed=self._mask_used_allowed,
+                strategy="median",
+            )
+
         return last_partial
 
     # ----------------------------
@@ -924,7 +1102,7 @@ class TrueWordCloud:
             if outline_src is not None:
                 image = self._overlay_mask_outline(
                     image=image,
-                    mask_img=outline_src,
+                    mask_allowed=self._mask_used_allowed,  # <-- IMPORTANT
                     used_bbox=(min_x, min_y, max_x, max_y),
                     padding=padding,
                     outline_color=mask_outline_color,
@@ -936,13 +1114,13 @@ class TrueWordCloud:
     def _overlay_mask_outline(
         self,
         image: PILImage.Image,
-        mask_img: PILImage.Image,
+        mask_allowed: np.ndarray,  # <-- pass the already-built allowed mask
         used_bbox: Tuple[float, float, float, float],
         padding: int,
         outline_color=(0, 0, 0),
         outline_width: int = 1,
     ) -> PILImage.Image:
-        """Overlay a cropped (used-bbox) outline of mask_img onto image."""
+        """Overlay a cropped (used-bbox) outline of the *mask_used* (mask_allowed) onto image."""
 
         def hex_to_rgb(hex_color: str):
             hex_color = hex_color.lstrip("#")
@@ -954,7 +1132,6 @@ class TrueWordCloud:
         if isinstance(color, str):
             color = hex_to_rgb(color)
 
-        mask_allowed = self._mask_to_allowed(mask_img)
         mask_h, mask_w = mask_allowed.shape
         mask_cx, mask_cy = mask_w // 2, mask_h // 2
 
@@ -1035,8 +1212,6 @@ class TrueWordCloud:
 
 def main():
 
-    mask_img = PILImage.open("examples/assets/mask_alice.png").convert("L")
-
     values = {
         "python": 100,
         "data": 98,
@@ -1085,28 +1260,34 @@ def main():
         "black": 10,
     }
 
+    mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
+    color_mask_img = PILImage.open("examples/assets/mask_heart_color.png")
+
     print("=" * 70)
-    print("TrueWordCloud Greedy Test")
+    print("TrueWordCloud Color Mask Test (Greedy)")
     print("=" * 70)
 
-    twc = TrueWordCloud(
+    twc_color = TrueWordCloud(
         values=values,
-        method="greedy",  # try: "square", "distance_transform"
+        method="greedy",  # try also: "square", "distance_transform"
         base_font_size=50,
         min_font_size=1,
         margin=3,
         max_attempts=20,
         scale_factor=1.3,
         seed=123,
+        use_mask_colors=True,  # or use_color=True depending on your naming
+        mask_shape_mode="colors",
     )
 
-    image, stats = twc.generate_with_stats(
-        mask=mask_img,
+    image, stats = twc_color.generate_with_stats(
+        mask=color_mask_img,
         mask_outline=True,
-        mask_outline_color="#FF0000",
+        mask_outline_color="#00AAFF",
         mask_outline_width=2,
     )
-    image.save("truewordcloud_greedy_test.png")
+
+    image.save("truewordcloud_greedy_color_mask_test.png")
 
     print(f"Canvas size: {stats['canvas_size']}")
     print(f"Font range: {stats['size_range']}")
@@ -1116,77 +1297,79 @@ def main():
     print(f"Mask used size: {stats['mask_used_size']}")
     print(f"Failure: {stats['failure']}")
     print(f"Attempts: {stats['attempts']}")
-    print("Saved: truewordcloud_greedy_test.png")
+    print("Saved: truewordcloud_greedy_color_mask_test.png")
 
     print("=" * 70)
-    print("TrueWordCloud Square Test")
+    print("TrueWordCloud Color Mask Test (Square)")
     print("=" * 70)
 
-    twc_square = TrueWordCloud(
+    twc_color = TrueWordCloud(
         values=values,
-        method="square",
-        base_font_size=50,
-        min_font_size=1,
-        margin=3,
-        max_attempts=20,
-        scale_factor=1.1,
-        seed=123,
-    )
-
-    image_square, stats_square = twc_square.generate_with_stats(
-        mask=mask_img,
-        mask_outline=True,
-        mask_outline_color="#0000FF",
-        mask_outline_width=2,
-    )
-    image_square.save("truewordcloud_square_test.png")
-
-    print(f"Canvas size: {stats_distance['canvas_size']}")
-    print(f"Font range: {stats_distance['size_range']}")
-    print(f"Method: {stats_distance['method']}")
-    print(
-        f"Placed words: {stats_distance['placed_words']} / {stats_distance['num_words']}"
-    )
-    print(f"Success: {stats_distance['success']}")
-    print(f"Mask used size: {stats_distance['mask_used_size']}")
-    print(f"Failure: {stats_distance['failure']}")
-    print(f"Attempts: {stats_distance['attempts']}")
-    print("Saved: truewordcloud_square_test.png")
-
-    print("=" * 70)
-    print("TrueWordCloud Distance Transform Test")
-    print("=" * 70)
-
-    twc_distance = TrueWordCloud(
-        values=values,
-        method="distance_transform",
+        method="square",  # try also: "greedy", "distance_transform"
         base_font_size=50,
         min_font_size=1,
         margin=3,
         max_attempts=20,
         scale_factor=1.3,
         seed=123,
+        use_mask_colors=True,  # or use_color=True depending on your naming
+        mask_shape_mode="colors",
     )
 
-    image_distance, stats_distance = twc_distance.generate_with_stats(
-        mask=mask_img,
+    image, stats = twc_color.generate_with_stats(
+        mask=color_mask_img,
         mask_outline=True,
-        mask_outline_color="#00FF00",
+        mask_outline_color="#00AAFF",
         mask_outline_width=2,
     )
-    image_distance.save("truewordcloud_distance_test.png")
 
-    print(f"Canvas size: {stats_distance['canvas_size']}")
-    print(f"Font range: {stats_distance['size_range']}")
-    print(f"Method: {stats_distance['method']}")
-    print(
-        f"Placed words: {stats_distance['placed_words']} / {stats_distance['num_words']}"
+    image.save("truewordcloud_square_color_mask_test.png")
+
+    print(f"Canvas size: {stats['canvas_size']}")
+    print(f"Font range: {stats['size_range']}")
+    print(f"Method: {stats['method']}")
+    print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
+    print(f"Success: {stats['success']}")
+    print(f"Mask used size: {stats['mask_used_size']}")
+    print(f"Failure: {stats['failure']}")
+    print(f"Attempts: {stats['attempts']}")
+    print("Saved: truewordcloud_square_color_mask_test.png")
+
+    print("=" * 70)
+    print("TrueWordCloud Color Mask Test (Distance Transform)")
+    print("=" * 70)
+
+    twc_color = TrueWordCloud(
+        values=values,
+        method="distance_transform",  # try also: "greedy", "square"
+        base_font_size=50,
+        min_font_size=1,
+        margin=3,
+        max_attempts=20,
+        scale_factor=1.3,
+        seed=123,
+        use_mask_colors=True,  # or use_color=True depending on your naming
+        mask_shape_mode="colors",
     )
-    print(f"Success: {stats_distance['success']}")
-    print(f"Mask used size: {stats_distance['mask_used_size']}")
-    print(f"Failure: {stats_distance['failure']}")
-    print(f"Attempts: {stats_distance['attempts']}")
-    print("Saved: truewordcloud_distance_test.png")
+
+    image, stats = twc_color.generate_with_stats(
+        mask=color_mask_img,
+        mask_outline=True,
+        mask_outline_color="#00AAFF",
+        mask_outline_width=2,
+    )
+
+    image.save("truewordcloud_distance_transform_color_mask_test.png")
+
+    print(f"Canvas size: {stats['canvas_size']}")
+    print(f"Font range: {stats['size_range']}")
+    print(f"Method: {stats['method']}")
+    print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
+    print(f"Success: {stats['success']}")
+    print(f"Mask used size: {stats['mask_used_size']}")
+    print(f"Failure: {stats['failure']}")
+    print(f"Attempts: {stats['attempts']}")
+    print("Saved: truewordcloud_distance_transform_color_mask_test.png")
 
 
 if __name__ == "__main__":

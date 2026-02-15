@@ -21,6 +21,8 @@ from dataclasses import dataclass
 import math
 import random
 import numpy as np
+import os
+import platform
 
 
 @dataclass
@@ -126,35 +128,45 @@ class TrueWordCloud:
         self.rng = random.Random(seed)
 
     def _get_default_font(self) -> str:
-        """Try to find a suitable default font"""
-        import matplotlib.font_manager as fm
-        import platform
-
+        """Find a suitable default TrueType font path for the system."""
         system = platform.system()
+        font_paths = []
 
         if system == "Windows":
-            candidates = ["Arial", "Segoe UI", "Calibri", "Verdana"]
+            font_paths = [
+                os.path.join(
+                    os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "arial.ttf"
+                ),
+                os.path.join(
+                    os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "segoeui.ttf"
+                ),
+                os.path.join(
+                    os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "calibri.ttf"
+                ),
+                os.path.join(
+                    os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "verdana.ttf"
+                ),
+            ]
         elif system == "Darwin":  # macOS
-            candidates = ["Helvetica", "Arial", "SF Pro Display"]
-        else:  # Linux
-            candidates = ["DejaVu Sans", "Liberation Sans", "FreeSans"]
+            font_paths = [
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/System/Library/Fonts/SFNSDisplay.ttf",
+                "/Library/Fonts/Arial.ttf",
+            ]
+        else:  # Linux and others
+            font_paths = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            ]
 
-        for font_name in candidates:
-            try:
-                matches = [
-                    f.fname
-                    for f in fm.fontManager.ttflist
-                    if font_name.lower() in f.name.lower()
-                ]
-                if matches:
-                    return matches[0]
-            except Exception:
-                continue
+        for path in font_paths:
+            if os.path.exists(path):
+                return path
 
-        if fm.fontManager.ttflist:
-            return fm.fontManager.ttflist[0].fname
-
-        raise RuntimeError("No TrueType fonts found on system")
+        # Fallback: PIL's default bitmap font (not scalable, but always available)
+        # Return a special marker string to indicate default font usage
+        return "__PIL_DEFAULT__"
 
     def _default_color_func(
         self, word: str, freq: float, norm_freq: float
@@ -175,53 +187,6 @@ class TrueWordCloud:
             font_sizes[word] = max(size, self.min_font_size)
         return font_sizes
 
-    # def _mask_to_allowed(
-    #     self,
-    #     mask_img: PILImage.Image,
-    #     *,
-    #     mode: str = "black_allowed",
-    #     bg_rgb=(255, 255, 255),
-    #     bg_tol: int = 18,  # try 12–30 depending on cutout quality
-    #     do_close: bool = True,
-    #     close_iters: int = 1,
-    # ) -> np.ndarray:
-    #     """
-    #     Convert a mask image to a boolean array where True=allowed.
-
-    #     mode:
-    #     - "black_allowed": classic mask (black allowed, white forbidden) using grayscale threshold.
-    #     - "nonwhite_allowed": treat near-white as background (forbidden), everything else allowed,
-    #                         using RGB distance-to-background (handles light colors better).
-    #     """
-    #     if mode == "black_allowed":
-    #         gray = np.array(mask_img.convert("L"), dtype=np.uint8)
-    #         return gray < 128
-
-    #     if mode == "nonwhite_allowed":
-    #         # Work in RGBA so we can also respect transparency if present
-    #         rgba = np.array(mask_img.convert("RGBA"), dtype=np.uint8)
-    #         rgb = rgba[..., :3].astype(np.int16)
-    #         alpha = rgba[..., 3].astype(np.int16)
-
-    #         bg = np.array(bg_rgb, dtype=np.int16)
-
-    #         # Squared Euclidean distance from background color (white by default)
-    #         d2 = np.sum((rgb - bg) ** 2, axis=-1)
-
-    #         # Near-white => forbidden. Far enough => allowed.
-    #         allowed = d2 > (bg_tol * bg_tol)
-
-    #         # If image has transparency, treat transparent pixels as background
-    #         allowed &= alpha > 0
-
-    #         # Optional: fill tiny holes caused by anti-aliased edges / compression artifacts
-    #         if do_close:
-    #             allowed = binary_closing(allowed, iterations=close_iters)
-
-    #         return allowed.astype(bool)
-
-    #     raise ValueError(f"Unknown mode: {mode}")
-
     def _measure_words(self, font_sizes: Dict[str, int]) -> List[WordBox]:
         word_boxes: List[WordBox] = []
         max_freq = max(self.values.values())
@@ -230,8 +195,13 @@ class TrueWordCloud:
             frequency = self.values[word]
             norm_freq = frequency / max_freq
 
-            font = PILImageFont.truetype(self.font_path, font_size)
-            bbox = font.getbbox(word)
+            if self.font_path == "__PIL_DEFAULT__":
+                font = PILImageFont.load_default()
+                # PIL's default font is fixed size (10x10), so bbox is always (0,0,6*len(word),11)
+                bbox = font.getbbox(word)
+            else:
+                font = PILImageFont.truetype(self.font_path, font_size)
+                bbox = font.getbbox(word)
             width = bbox[2] - bbox[0]
             height = bbox[3] - bbox[1]
 
@@ -288,7 +258,10 @@ class TrueWordCloud:
         if key in self._glyph_cache:
             return self._glyph_cache[key]
 
-        font = PILImageFont.truetype(self.font_path, word_box.font_size)
+        if self.font_path == "__PIL_DEFAULT__":
+            font = PILImageFont.load_default()
+        else:
+            font = PILImageFont.truetype(self.font_path, word_box.font_size)
         w, h = word_box.width, word_box.height
 
         img = PILImage.new("L", (w, h), 0)
@@ -517,11 +490,6 @@ class TrueWordCloud:
             mask_color_arr = None
             if getattr(self, "use_mask_colors", False):
                 mask_color_arr = rgba[..., :3].copy()
-
-        # Debug visualization: allowed should be BLACK
-        PILImage.fromarray(
-            np.where(mask_allowed, 0, 255).astype(np.uint8), mode="L"
-        ).save("dbg_allowed.png")
 
         return mask_resized, mask_allowed, mask_color_arr
 
@@ -1089,7 +1057,10 @@ class TrueWordCloud:
         self._last_offsets = (offset_x, offset_y, padding)
 
         for wb in word_boxes:
-            font = PILImageFont.truetype(self.font_path, wb.font_size)
+            if self.font_path == "__PIL_DEFAULT__":
+                font = PILImageFont.load_default()
+            else:
+                font = PILImageFont.truetype(self.font_path, wb.font_size)
             x = wb.x - wb.width / 2 + offset_x - wb.bbox_offset_x
             y = wb.y - wb.height / 2 + offset_y - wb.bbox_offset_y
             draw.text((x, y), wb.word, font=font, fill=wb.color)

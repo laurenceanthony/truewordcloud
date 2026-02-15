@@ -7,11 +7,15 @@ A word cloud generator that maintains TRUE proportional relationships between va
 ## Key Features
 
 - ✅ **True Proportionality** - Font sizes strictly proportional to input values (no squeezing/normalization)
-- 🎨 **Two Layout Algorithms** - Choose between 'greedy' (fast, deterministic) and 'square' (compact, randomized)
+- 🎨 **Three Layout Algorithms** - Choose between 'greedy' (fast, deterministic), 'square' (compact, randomized), and 'distance_transform' (compact packing using distance transform)
+- 🖼️ **Mask Support** - Use custom mask images to constrain word placement (black=allowed, white=forbidden)
+- 🌈 **Color Masks** - Use colored masks to assign word colors from an image
+- 🖋️ **Mask Outline** - Optionally overlay the mask outline on the generated word cloud
 - 📐 **Dynamic Canvas** - Canvas size determined by content, not pre-fixed dimensions
 - 🔢 **Any Numeric Values** - Works with frequencies, keyness scores, TF-IDF, probabilities, etc.
 - 🎯 **No Overlaps** - Guaranteed non-overlapping word placement
 - 🌈 **Custom Colors** - Flexible color function support
+- 📊 **Detailed Statistics** - Use `generate_with_stats()` to get placement and layout stats
 
 ## Installation
 
@@ -67,6 +71,51 @@ twc = TrueWordCloud(values=values, method='greedy')
 twc = TrueWordCloud(values=values, method='square')
 ```
 
+### Distance Transform Packing (method='distance_transform')
+
+**Best for: Most compact, mask-constrained layouts**
+
+- 🧲 Uses distance transform to pack words tightly
+- 🖼️ Works especially well with masks
+- 🧩 Fills gaps more efficiently than other methods
+- ✅ Ideal for artistic, shape-constrained, or dense word clouds
+
+```python
+twc = TrueWordCloud(values=values, method='distance_transform')
+```
+
+## Mask Support
+
+You can constrain word placement to a custom shape using a mask image (black=allowed, white=forbidden):
+
+```python
+from PIL import Image
+mask_img = Image.open('mask.png').convert('L')
+twc = TrueWordCloud(values=values, method='greedy')
+image = twc.generate(mask=mask_img)
+image.save('masked_wordcloud.png')
+```
+
+### Mask Outline
+
+To overlay the mask outline on the word cloud:
+
+```python
+image = twc.generate(mask=mask_img, mask_outline=True, mask_outline_color='#00AAFF', mask_outline_width=2)
+image.save('masked_wordcloud_with_outline.png')
+```
+
+### Color Masks
+
+You can use a colored mask to assign word colors from an image:
+
+```python
+color_mask_img = Image.open('color_mask.png')
+twc = TrueWordCloud(values=values, method='greedy', use_mask_colors=True, mask_shape_mode='colors')
+image = twc.generate(mask=color_mask_img)
+image.save('color_masked_wordcloud.png')
+```
+
 ## Advanced Usage
 
 ### Custom Colors
@@ -89,18 +138,20 @@ twc = TrueWordCloud(values=values, color_func=color_func)
 ```python
 twc = TrueWordCloud(
     values={'word': 100, 'cloud': 50},  # Required: word -> value mapping
-    method='greedy',                     # 'greedy' or 'square'
+    method='greedy',                     # 'greedy', 'square', or 'distance_transform'
     base_font_size=100,                  # Font size for max value word
     font_path='/path/to/font.ttf',       # Custom font (auto-detected if None)
     min_font_size=10,                    # Minimum font size
     background_color=(255, 255, 255),    # RGB tuple
     margin=2,                            # Pixels between words
-    color_func=None                      # Custom color function
+    color_func=None,                     # Custom color function
+    use_mask_colors=False,               # Use colors from mask image
+    mask_shape_mode='no-colors'          # 'no-colors' or 'colors'
 )
 
 # Generate with statistics
-image, stats = twc.generate_with_stats()
-print(stats)  # {'num_words': 2, 'size_range': (50, 100), 'canvas_size': (800, 600), 'method': 'greedy'}
+image, stats = twc.generate_with_stats(mask=mask_img)
+print(stats)  # {'num_words': 2, 'size_range': (50, 100), 'canvas_size': (800, 600), 'method': 'greedy', ...}
 ```
 
 ## Comparison with Traditional Word Clouds
@@ -110,8 +161,10 @@ print(stats)  # {'num_words': 2, 'size_range': (50, 100), 'canvas_size': (800, 6
 | Proportionality | ✅ Strict (font_size ∝ value) | ❌ Arbitrary resizing to fit |
 | Canvas Size | Dynamic (fits content) | Fixed (pre-defined) |
 | Reproducibility | ✅ Greedy method | Sometimes |
-| Layout Options | 2 algorithms | Usually 1 |
+| Layout Options | 3 algorithms + mask | Usually 1 |
 | Value Types | Any numeric | Usually just frequencies |
+| Mask Support | ✅ Yes | Sometimes |
+| Color Masks | ✅ Yes | Rare |
 
 ## Why True Proportionality Matters
 
@@ -132,13 +185,14 @@ Traditional word clouds often **lie** about the data:
 - **Scientific Papers** - Maintaining accurate proportional relationships
 - **Marketing** - Brand mentions, sentiment scores
 - **Education** - Concept importance, study time allocation
+- **Artistic/Shape Clouds** - Custom shapes, logos, or images as masks
 
 ## Requirements
 
 - Python 3.7+
 - Pillow (PIL)
 - numpy
-- matplotlib (for font detection)
+- scipy
 
 ## License
 
@@ -202,6 +256,23 @@ twc = TrueWordCloud(
 twc.generate().save('rainbow.png')
 ```
 
+### With Mask and Mask Outline
+```python
+from PIL import Image
+mask_img = Image.open('mask_heart.png').convert('L')
+twc = TrueWordCloud(values=word_frequencies, method='distance_transform')
+image = twc.generate(mask=mask_img, mask_outline=True, mask_outline_color='#00AAFF', mask_outline_width=2)
+image.save('heart_mask_wordcloud.png')
+```
+
+### With Color Mask
+```python
+color_mask_img = Image.open('mask_heart_color.png')
+twc = TrueWordCloud(values=word_frequencies, method='greedy', use_mask_colors=True, mask_shape_mode='colors')
+image = twc.generate(mask=color_mask_img)
+image.save('color_mask_wordcloud.png')
+```
+
 ## FAQ
 
 **Q: Why are the layouts different sizes?**  
@@ -211,10 +282,13 @@ A: Canvas size is determined by content. More words or higher values = larger ca
 A: Not directly, as that would require resizing words (breaking true proportionality). Instead, adjust `base_font_size` to control overall scale.
 
 **Q: Which method should I use?**  
-A: Use `greedy` for speed and reproducibility. Use `square` for compact layouts and visual variety.
+A: Use `greedy` for speed and reproducibility. Use `square` for compact layouts and visual variety. Use `distance_transform` for the most compact, mask-constrained layouts.
 
 **Q: How do I make words fit in a specific area?**  
 A: Reduce `base_font_size` until the generated canvas is the desired size.
+
+**Q: How do I use a mask or color mask?**  
+A: See the Mask Support and Color Masks sections above for examples.
 
 ---
 

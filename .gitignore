@@ -32,6 +32,8 @@ Thumbs.db
 # Generated word clouds (ignore all PNGs except examples folder)
 *.png
 !examples/*.png
+!examples/assets/*.png
+
 
 # Project specific
 

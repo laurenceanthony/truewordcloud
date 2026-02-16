@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="truewordcloud",
-    version="1.1.0",
+    version="1.1.1",
     author="Laurence Anthony",
     author_email="anthony@antlabsolutions.com",
     description="Value-proportional word cloud generator with true size relationships",

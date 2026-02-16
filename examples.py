@@ -282,9 +282,6 @@ def example_large_dataset():
     twc_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
-        base_font_size=80,
-        min_font_size=8,
-        margin=2,
     )
     image_dist, stats_dist = twc_dist.generate_with_stats()
     image_dist.save("examples/distance_transform_large.png")
@@ -307,12 +304,7 @@ def example_custom_font():
         "Creative": 50,
     }
 
-    # Try to find a custom font (fallback to default if not found)
-    import matplotlib.font_manager as fm
-
-    # Look for a specific font style
-    serif_fonts = [f.fname for f in fm.fontManager.ttflist if "times" in f.name.lower()]
-    font_path = serif_fonts[0] if serif_fonts else None
+    font_path = "examples/assets/roboto_font/Roboto_Condensed-Black.ttf"
 
     # Greedy layout
     twc_greedy = TrueWordCloud(
@@ -369,8 +361,6 @@ def example_from_csv_with_stoplist():
     twc_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
-        base_font_size=70,
-        min_font_size=12,
     )
     image_dist = twc_dist.generate()
     image_dist.save("examples/distance_transform_csv.png")
@@ -438,11 +428,6 @@ def example_with_colored_mask():
     twc_color = TrueWordCloud(
         values=values,
         method="greedy",  # try also: "greedy", "distance_transform"
-        base_font_size=50,
-        min_font_size=1,
-        margin=3,
-        max_attempts=20,
-        scale_factor=1.3,
         seed=123,
         use_mask_colors=True,
         mask_shape_mode="colors",
@@ -464,11 +449,6 @@ def example_with_colored_mask():
     twc_color_square = TrueWordCloud(
         values=values,
         method="square",
-        base_font_size=50,
-        min_font_size=1,
-        margin=3,
-        max_attempts=20,
-        scale_factor=1.3,
         seed=123,
         use_mask_colors=True,
         mask_shape_mode="colors",
@@ -489,11 +469,6 @@ def example_with_colored_mask():
     twc_color_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
-        base_font_size=50,
-        min_font_size=1,
-        margin=3,
-        max_attempts=20,
-        scale_factor=1.3,
         seed=123,
         use_mask_colors=True,
         mask_shape_mode="colors",

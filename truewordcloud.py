@@ -1296,44 +1296,40 @@ def main():
         "black": 10,
     }
 
-    mask_img = PILImage.open("examples/assets/cloud.png").convert("L")
-    color_mask_img = PILImage.open("examples/assets/cloud.png")
+    # mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
+    color_mask_img = PILImage.open("examples/assets/mask_heart_color.png")
 
-    print("=" * 70)
-    print("TrueWordCloud Color Mask Test (Greedy)")
-    print("=" * 70)
+    # print("=" * 70)
+    # print("TrueWordCloud Color Mask Test (Greedy)")
+    # print("=" * 70)
 
-    twc_color = TrueWordCloud(
-        values=values,
-        method="greedy",  # try also: "square", "distance_transform"
-        base_font_size=150,
-        min_font_size=1,
-        margin=3,
-        max_attempts=20,
-        scale_factor=1.1,
-        seed=123,
-        use_mask_colors=False,  # or use_color=True depending on your naming
-        mask_shape_mode="no-colors",
-    )
+    # twc_color = TrueWordCloud(
+    #     values=values,
+    #     method="greedy",  # try also: "square", "distance_transform"
+    #     scale_factor=1.1,
+    #     seed=123,
+    #     use_mask_colors=True,  # or use_color=True depending on your naming
+    #     mask_shape_mode="colors",
+    # )
 
-    image, stats = twc_color.generate_with_stats(
-        mask=mask_img,
-        mask_outline=True,
-        mask_outline_color="#00AAFF",
-        mask_outline_width=2,
-    )
+    # image, stats = twc_color.generate_with_stats(
+    #     mask=color_mask_img,
+    #     mask_outline=True,
+    #     mask_outline_color="#00AAFF",
+    #     mask_outline_width=2,
+    # )
 
-    image.save("truewordcloud_greedy_color_mask_test.png")
+    # image.save("truewordcloud_greedy_color_mask_test.png")
 
-    print(f"Canvas size: {stats['canvas_size']}")
-    print(f"Font range: {stats['size_range']}")
-    print(f"Method: {stats['method']}")
-    print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
-    print(f"Success: {stats['success']}")
-    print(f"Mask used size: {stats['mask_used_size']}")
-    print(f"Failure: {stats['failure']}")
-    print(f"Attempts: {stats['attempts']}")
-    print("Saved: truewordcloud_greedy_color_mask_test.png")
+    # print(f"Canvas size: {stats['canvas_size']}")
+    # print(f"Font range: {stats['size_range']}")
+    # print(f"Method: {stats['method']}")
+    # print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
+    # print(f"Success: {stats['success']}")
+    # print(f"Mask used size: {stats['mask_used_size']}")
+    # print(f"Failure: {stats['failure']}")
+    # print(f"Attempts: {stats['attempts']}")
+    # print("Saved: truewordcloud_greedy_color_mask_test.png")
 
     # print("=" * 70)
     # print("TrueWordCloud Color Mask Test (Square)")
@@ -1342,11 +1338,7 @@ def main():
     # twc_color = TrueWordCloud(
     #     values=values,
     #     method="square",  # try also: "greedy", "distance_transform"
-    #     base_font_size=50,
-    #     min_font_size=1,
-    #     margin=3,
-    #     max_attempts=20,
-    #     scale_factor=1.3,
+    #     scale_factor=1.2,
     #     seed=123,
     #     use_mask_colors=True,  # or use_color=True depending on your naming
     #     mask_shape_mode="colors",
@@ -1378,18 +1370,13 @@ def main():
     twc_color = TrueWordCloud(
         values=values,
         method="distance_transform",  # try also: "greedy", "square"
-        base_font_size=150,
-        min_font_size=1,
-        margin=3,
-        max_attempts=20,
-        scale_factor=1.2,
         seed=123,
-        use_mask_colors=False,  # or use_color=True depending on your naming
-        mask_shape_mode="no-colors",
+        use_mask_colors=True,  # or use_color=True depending on your naming
+        mask_shape_mode="colors",
     )
 
     image, stats = twc_color.generate_with_stats(
-        mask=mask_img,
+        mask=color_mask_img,
         mask_outline=True,
         mask_outline_color="#00AAFF",
         mask_outline_width=2,

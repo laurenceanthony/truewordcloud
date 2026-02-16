@@ -485,7 +485,7 @@ def example_with_colored_mask():
         f"✓ Stats: placed {stats_square['placed_words']} / {stats_square['num_words']} words, success={stats_square['success']}"
     )
 
-    # Distrance transform layout with colored mask
+    # Distance transform layout with colored mask
     twc_color_dist = TrueWordCloud(
         values=values,
         method="distance_transform",

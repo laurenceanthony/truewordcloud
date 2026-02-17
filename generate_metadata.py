@@ -2,7 +2,7 @@ import textwrap
 
 metadata = {
     "name": "truewordcloud",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "author": "Laurence Anthony",
     "author_email": "anthony@antlabsolutions.com",
     "description": "Value-proportional word cloud generator with true size relationships",

@@ -4,6 +4,13 @@
 
 A word cloud generator that maintains TRUE proportional relationships between values. Unlike traditional word clouds that arbitrarily resize words to fit a canvas, TrueWordCloud ensures font sizes are ALWAYS proportional to the input values.
 
+---
+**v1.2.0 Update:**
+- Refactored for clarity: all parameters are set in the constructor (`__init__`), with a unified naming scheme.
+- Redundant parameters removed, API simplified.
+- Documentation and examples updated for consistency.
+---
+
 ## Key Features
 
 - ✅ **True Proportionality** - Font sizes strictly proportional to input values (no squeezing/normalization)
@@ -91,8 +98,8 @@ You can constrain word placement to a custom shape using a mask image (black=all
 ```python
 from PIL import Image
 mask_img = Image.open('mask.png').convert('L')
-twc = TrueWordCloud(values=values, method='greedy')
-image = twc.generate(mask=mask_img)
+twc = TrueWordCloud(values=values, method='greedy', mask=mask_img)
+image = twc.generate()
 image.save('masked_wordcloud.png')
 ```
 
@@ -101,7 +108,8 @@ image.save('masked_wordcloud.png')
 To overlay the mask outline on the word cloud:
 
 ```python
-image = twc.generate(mask=mask_img, mask_outline=True, mask_outline_color='#00AAFF', mask_outline_width=2)
+twc = TrueWordCloud(values=values, method='greedy', mask=mask_img, show_mask_outline=True, mask_outline_color='#00AAFF', mask_outline_width=2)
+image = twc.generate()
 image.save('masked_wordcloud_with_outline.png')
 ```
 
@@ -111,8 +119,8 @@ You can use a colored mask to assign word colors from an image:
 
 ```python
 color_mask_img = Image.open('color_mask.png')
-twc = TrueWordCloud(values=values, method='greedy', use_mask_colors=True, mask_shape_mode='colors')
-image = twc.generate(mask=color_mask_img)
+twc = TrueWordCloud(values=values, method='greedy', mask=color_mask_img, use_mask_colors=True, mask_shape_transparency=True)
+image = twc.generate()
 image.save('color_masked_wordcloud.png')
 ```
 
@@ -138,19 +146,27 @@ twc = TrueWordCloud(values=values, color_func=color_func)
 ```python
 twc = TrueWordCloud(
     values={'word': 100, 'cloud': 50},  # Required: word -> value mapping
-    method='greedy',                     # 'greedy', 'square', or 'distance_transform'
-    base_font_size=100,                  # Font size for max value word
-    font_path='/path/to/font.ttf',       # Custom font (auto-detected if None)
-    min_font_size=10,                    # Minimum font size
-    background_color=(255, 255, 255),    # RGB tuple
-    margin=2,                            # Pixels between words
-    color_func=None,                     # Custom color function
-    use_mask_colors=False,               # Use colors from mask image
-    mask_shape_mode='no-colors'          # 'no-colors' or 'colors'
+    method='greedy',                    # 'greedy', 'square', or 'distance_transform'
+    margin=2,                           # Pixels between words
+    angle_divisor=3.0,                  # Angle divisor for spiral layout
+    max_attempts=20,                    # Max mask scaling attempts
+    scale_factor=1.2,                   # Mask scaling factor
+    seed=None,                          # Random seed
+    base_font_size=100,                 # Font size for max value word
+    font_path='/path/to/font.ttf',      # Custom font (auto-detected if None)
+    min_font_size=10,                   # Minimum font size
+    background_color=(255, 255, 255),   # RGB tuple
+    color_func=None,                    # Custom color function
+    mask=None,                          # Mask image (PIL Image)
+    use_mask_colors=False,              # Use colors from mask image
+    mask_shape_transparency=False,      # True for transparent mask, False for white background
+    show_mask_outline=False,            # Overlay mask outline
+    mask_outline_color=(0, 0, 0),       # Outline color
+    mask_outline_width=1,               # Outline width
 )
 
 # Generate with statistics
-image, stats = twc.generate_with_stats(mask=mask_img)
+image, stats = twc.generate_with_stats()
 print(stats)  # {'num_words': 2, 'size_range': (50, 100), 'canvas_size': (800, 600), 'method': 'greedy', ...}
 ```
 
@@ -260,16 +276,16 @@ twc.generate().save('rainbow.png')
 ```python
 from PIL import Image
 mask_img = Image.open('mask_heart.png').convert('L')
-twc = TrueWordCloud(values=word_frequencies, method='distance_transform')
-image = twc.generate(mask=mask_img, mask_outline=True, mask_outline_color='#00AAFF', mask_outline_width=2)
+twc = TrueWordCloud(values=word_frequencies, method='distance_transform', mask=mask_img, show_mask_outline=True, mask_outline_color='#00AAFF', mask_outline_width=2)
+image = twc.generate()
 image.save('heart_mask_wordcloud.png')
 ```
 
 ### With Color Mask
 ```python
 color_mask_img = Image.open('mask_heart_color.png')
-twc = TrueWordCloud(values=word_frequencies, method='greedy', use_mask_colors=True, mask_shape_mode='colors')
-image = twc.generate(mask=color_mask_img)
+twc = TrueWordCloud(values=word_frequencies, method='greedy', mask=color_mask_img, mask_shape_transparency=True, use_mask_colors=True)
+image = twc.generate()
 image.save('color_mask_wordcloud.png')
 ```
 

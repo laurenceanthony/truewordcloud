@@ -69,43 +69,44 @@ class TrueWordCloud:
         self,
         values: Dict[str, float],
         method: str = "distance_transform",
+        margin: int = 2,
+        angle_divisor: float = 3.0,
+        max_attempts: int = 20,
+        scale_factor: float = 1.2,
+        seed: Optional[int] = None,
         base_font_size: int = 100,
         font_path: Optional[str] = None,
         min_font_size: int = 10,
         background_color: Tuple[int, int, int] = (255, 255, 255),
-        margin: int = 2,
         color_func: Optional[callable] = None,
-        angle_divisor: float = 3.0,
-        seed: Optional[int] = None,
-        max_attempts: int = 20,
-        scale_factor: float = 1.2,
+        mask: Optional[PILImage.Image] = None,
         use_mask_colors: bool = False,
-        mask_color_mode: str = "mean_ink",
-        mask_shape_mode: str = "no-colors",
+        mask_shape_transparency: bool = False,
+        show_mask_outline: bool = False,
+        mask_outline_color=(0, 0, 0),
+        mask_outline_width: int = 1,
     ):
-        self.use_mask_colors = use_mask_colors
-        self.mask_shape_mode = mask_shape_mode  # "black_allowed" | "nonwhite_allowed"
-        self.mask_color_mode = mask_color_mode  # "center" | "mean_ink"
-        self._mask_used_color_arr = None
-        self.rng = random.Random(seed)
-        self.values = values
-        self.method = method.lower()
-        if self.method not in ["greedy", "square", "distance_transform"]:
-            raise ValueError(
-                f"method must be 'greedy', 'square', or 'distance_transform', got '{method}'"
-            )
 
+        self.values = values
+        self.method = method
+        self.margin = margin
+        self.angle_divisor = angle_divisor
+        self.max_attempts = max_attempts
+        self.scale_factor = scale_factor
+        self.seed = seed
         self.base_font_size = base_font_size
         self.font_path = font_path or self._get_default_font()
         self.min_font_size = min_font_size
         self.background_color = background_color
-        self.margin = margin
         self.color_func = color_func or self._default_color_func
-        self.angle_divisor = angle_divisor
-
-        # Unified attempts for mask-scaling (and for DT even without a mask image)
-        self.max_attempts = max_attempts
-        self.scale_factor = scale_factor
+        self.mask = mask
+        self.use_mask_colors = use_mask_colors
+        self.mask_shape_transparency = mask_shape_transparency
+        self.show_mask_outline = show_mask_outline
+        self.mask_outline_color = mask_outline_color
+        self.mask_outline_width = mask_outline_width
+        self._mask_used_color_arr = None
+        self.rng = random.Random(seed)
 
         # Outputs/debug
         self.words: List[WordBox] = []
@@ -123,6 +124,13 @@ class TrueWordCloud:
 
         # Glyph cache
         self._glyph_cache: Dict[Tuple[str, int], np.ndarray] = {}
+
+        # Validate method argument
+        allowed_methods = ["greedy", "square", "distance_transform"]
+        if self.method not in allowed_methods:
+            raise ValueError(
+                "method must be 'greedy', 'square', or 'distance_transform'"
+            )
 
     def reseed(self, seed: Optional[int]) -> None:
         self.rng = random.Random(seed)
@@ -461,13 +469,8 @@ class TrueWordCloud:
         if mask_img is None:
             return None, np.ones((h, w), dtype=bool), None
 
-        # New simplified mode: "no-colors" or "colors"
-        mode = getattr(self, "mask_shape_mode", "no-colors")
-        if mode not in ("no-colors", "colors"):
-            raise ValueError("mask_shape_mode must be 'no-colors' or 'colors'")
-
-        if mode == "no-colors":
-            # Binary mask: black allowed, white not allowed
+        if self.mask_shape_transparency == False:
+            # White background: white pixels are not allowed (i.e., non-white pixels are allowed)
             # Use NEAREST to preserve crisp edges
             mask_resized = mask_img.convert("L").resize(
                 (w, h), resample=PILImage.NEAREST
@@ -476,8 +479,8 @@ class TrueWordCloud:
             mask_allowed = gray < 128
             mask_color_arr = None  # no colors used in this mode
 
-        else:  # mode == "colors"
-            # Color mask: non-transparent allowed, transparent not allowed
+        else:
+            # Transparent background: non-transparent allowed, transparent not allowed
             # Use NEAREST for alpha to avoid "phantom" semi-transparent fringes
             mask_resized = mask_img.convert("RGBA").resize(
                 (w, h), resample=PILImage.NEAREST
@@ -1005,10 +1008,6 @@ class TrueWordCloud:
 
     def generate(
         self,
-        mask: Optional[PILImage.Image] = None,
-        mask_outline: bool = False,
-        mask_outline_color=(0, 0, 0),
-        mask_outline_width: int = 1,
     ) -> PILImage.Image:
         """
         Generate the word cloud image.
@@ -1024,12 +1023,12 @@ class TrueWordCloud:
         base_word_boxes = self._measure_words(font_sizes)
 
         # Unified attempts + scaling
-        word_boxes = self._layout_with_attempts(base_word_boxes, mask)
+        word_boxes = self._layout_with_attempts(base_word_boxes, self.mask)
 
         # If nothing placed, return a small diagnostic image
         if not word_boxes:
-            if mask is not None:
-                width, height = mask.size
+            if self.mask is not None:
+                width, height = self.mask.size
             else:
                 width = height = 300
 
@@ -1052,7 +1051,7 @@ class TrueWordCloud:
         min_x, min_y, max_x, max_y = self._calculate_bounding_box(word_boxes)
 
         # If drawing an outline, ensure bbox includes the mask extents too
-        # if mask_outline and self._mask_used_allowed is not None:
+        # if self.show_mask_outline and self._mask_used_allowed is not None:
         #     mh, mw = self._mask_used_allowed.shape
         #     mask_cx, mask_cy = mw // 2, mh // 2
 
@@ -1069,7 +1068,7 @@ class TrueWordCloud:
         #     max_x = max(max_x, mask_max_x)
         #     max_y = max(max_y, mask_max_y)
 
-        if mask_outline and self._mask_used_allowed is not None:
+        if self.show_mask_outline and self._mask_used_allowed is not None:
             mh, mw = self._mask_used_allowed.shape
             mask_cx, mask_cy = mw // 2, mh // 2
 
@@ -1096,7 +1095,9 @@ class TrueWordCloud:
         base_padding = 20
 
         # If drawing an outline, reserve extra margin so it can't be clipped
-        outline_extra = (mask_outline_width // 2) + 2 if mask_outline else 0
+        outline_extra = (
+            (self.mask_outline_width // 2) + 2 if self.show_mask_outline else 0
+        )
         pad = base_padding + outline_extra
 
         width = (max_xi - min_xi + 1) + 2 * pad
@@ -1121,9 +1122,9 @@ class TrueWordCloud:
             draw.text((x, y), wb.word, font=font, fill=wb.color)
 
         # Mask outline should match the *mask actually used* in the final attempt
-        if mask_outline:
+        if self.show_mask_outline:
             outline_src = (
-                self._mask_used_img if self._mask_used_img is not None else mask
+                self._mask_used_img if self._mask_used_img is not None else self.mask
             )
             if outline_src is not None:
                 image = self._overlay_mask_outline(
@@ -1131,8 +1132,8 @@ class TrueWordCloud:
                     mask_allowed=self._mask_used_allowed,
                     used_bbox=(min_xi, min_yi, max_xi, max_yi),
                     padding=pad,  # <-- IMPORTANT: use pad, not base_padding
-                    outline_color=mask_outline_color,
-                    outline_width=mask_outline_width,
+                    outline_color=self.mask_outline_color,
+                    outline_width=self.mask_outline_width,
                 )
 
         return image
@@ -1208,17 +1209,8 @@ class TrueWordCloud:
 
     def generate_with_stats(
         self,
-        mask: Optional[PILImage.Image] = None,
-        mask_outline: bool = False,
-        mask_outline_color=(0, 0, 0),
-        mask_outline_width: int = 1,
     ) -> Tuple[PILImage.Image, Dict]:
-        image = self.generate(
-            mask=mask,
-            mask_outline=mask_outline,
-            mask_outline_color=mask_outline_color,
-            mask_outline_width=mask_outline_width,
-        )
+        image = self.generate()
 
         font_sizes = self._calculate_font_sizes()
         stats = {
@@ -1299,69 +1291,65 @@ def main():
     # mask_img = PILImage.open("examples/assets/mask_heart.png").convert("L")
     color_mask_img = PILImage.open("examples/assets/mask_heart_color.png")
 
-    # print("=" * 70)
-    # print("TrueWordCloud Color Mask Test (Greedy)")
-    # print("=" * 70)
+    print("=" * 70)
+    print("TrueWordCloud Color Mask Test (Greedy)")
+    print("=" * 70)
 
-    # twc_color = TrueWordCloud(
-    #     values=values,
-    #     method="greedy",  # try also: "square", "distance_transform"
-    #     scale_factor=1.1,
-    #     seed=123,
-    #     use_mask_colors=True,  # or use_color=True depending on your naming
-    #     mask_shape_mode="colors",
-    # )
+    twc_color = TrueWordCloud(
+        values=values,
+        method="greedy",  # try also: "square", "distance_transform"
+        scale_factor=1.1,
+        seed=123,
+        mask=color_mask_img,
+        mask_shape_transparency=True,
+        use_mask_colors=True,
+        show_mask_outline=True,
+    )
 
-    # image, stats = twc_color.generate_with_stats(
-    #     mask=color_mask_img,
-    #     mask_outline=True,
-    #     mask_outline_color="#00AAFF",
-    #     mask_outline_width=2,
-    # )
+    image, stats = twc_color.generate_with_stats()
 
-    # image.save("truewordcloud_greedy_color_mask_test.png")
+    image.save("truewordcloud_greedy_color_mask_test.png")
 
-    # print(f"Canvas size: {stats['canvas_size']}")
-    # print(f"Font range: {stats['size_range']}")
-    # print(f"Method: {stats['method']}")
-    # print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
-    # print(f"Success: {stats['success']}")
-    # print(f"Mask used size: {stats['mask_used_size']}")
-    # print(f"Failure: {stats['failure']}")
-    # print(f"Attempts: {stats['attempts']}")
-    # print("Saved: truewordcloud_greedy_color_mask_test.png")
+    print(f"Canvas size: {stats['canvas_size']}")
+    print(f"Font range: {stats['size_range']}")
+    print(f"Method: {stats['method']}")
+    print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
+    print(f"Success: {stats['success']}")
+    print(f"Mask used size: {stats['mask_used_size']}")
+    print(f"Failure: {stats['failure']}")
+    print(f"Attempts: {stats['attempts']}")
+    print("Saved: truewordcloud_greedy_color_mask_test.png")
 
-    # print("=" * 70)
-    # print("TrueWordCloud Color Mask Test (Square)")
-    # print("=" * 70)
+    print("=" * 70)
+    print("TrueWordCloud Color Mask Test (Square)")
+    print("=" * 70)
 
-    # twc_color = TrueWordCloud(
-    #     values=values,
-    #     method="square",  # try also: "greedy", "distance_transform"
-    #     scale_factor=1.2,
-    #     seed=123,
-    #     use_mask_colors=True,  # or use_color=True depending on your naming
-    #     mask_shape_mode="colors",
-    # )
+    quit()
 
-    # image, stats = twc_color.generate_with_stats(
-    #     mask=color_mask_img,
-    #     mask_outline=True,
-    #     mask_outline_color="#00AAFF",
-    #     mask_outline_width=2,
-    # )
+    twc_color = TrueWordCloud(
+        values=values,
+        method="square",  # try also: "greedy", "distance_transform"
+        scale_factor=1.1,
+        seed=123,
+        mask=color_mask_img,
+        mask_shape_transparency=True,
+        use_mask_colors=True,
+        show_mask_outline=True,
+    )
 
-    # image.save("truewordcloud_square_color_mask_test.png")
+    image, stats = twc_color.generate_with_stats()
 
-    # print(f"Canvas size: {stats['canvas_size']}")
-    # print(f"Font range: {stats['size_range']}")
-    # print(f"Method: {stats['method']}")
-    # print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
-    # print(f"Success: {stats['success']}")
-    # print(f"Mask used size: {stats['mask_used_size']}")
-    # print(f"Failure: {stats['failure']}")
-    # print(f"Attempts: {stats['attempts']}")
-    # print("Saved: truewordcloud_square_color_mask_test.png")
+    image.save("truewordcloud_square_color_mask_test.png")
+
+    print(f"Canvas size: {stats['canvas_size']}")
+    print(f"Font range: {stats['size_range']}")
+    print(f"Method: {stats['method']}")
+    print(f"Placed words: {stats['placed_words']} / {stats['num_words']}")
+    print(f"Success: {stats['success']}")
+    print(f"Mask used size: {stats['mask_used_size']}")
+    print(f"Failure: {stats['failure']}")
+    print(f"Attempts: {stats['attempts']}")
+    print("Saved: truewordcloud_square_color_mask_test.png")
 
     print("=" * 70)
     print("TrueWordCloud Color Mask Test (Distance Transform)")
@@ -1370,17 +1358,15 @@ def main():
     twc_color = TrueWordCloud(
         values=values,
         method="distance_transform",  # try also: "greedy", "square"
+        scale_factor=1.1,
         seed=123,
-        use_mask_colors=True,  # or use_color=True depending on your naming
-        mask_shape_mode="colors",
+        mask=color_mask_img,
+        mask_shape_transparency=True,
+        use_mask_colors=True,
+        show_mask_outline=True,
     )
 
-    image, stats = twc_color.generate_with_stats(
-        mask=color_mask_img,
-        mask_outline=True,
-        mask_outline_color="#00AAFF",
-        mask_outline_width=2,
-    )
+    image, stats = twc_color.generate_with_stats()
 
     image.save("truewordcloud_distance_transform_mask_test.png")
     print(f"Canvas size: {stats['canvas_size']}")

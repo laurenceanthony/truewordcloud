@@ -155,7 +155,7 @@ def example_custom_colors():
 
     values = {"hot": 100, "warm": 80, "moderate": 60, "cool": 40, "cold": 20}
 
-    # Greedy layout
+    # Greedy layoutd
     twc_greedy = TrueWordCloud(
         values=values,
         method="greedy",
@@ -376,27 +376,33 @@ def example_with_mask():
 
     # Distance greedy layout with mask
     twc_greedy = TrueWordCloud(
-        values=values, method="greedy", base_font_size=70, min_font_size=12
-    )
-    image_greedy = twc_greedy.generate(
+        values=values,
+        method="greedy",
+        base_font_size=70,
+        min_font_size=12,
         mask=mask_img,
-        mask_outline=True,
+        mask_shape_transparency=False,
+        show_mask_outline=True,
         mask_outline_color="#000000",
         mask_outline_width=2,
     )
+    image_greedy = twc_greedy.generate()
     image_greedy.save("examples/greedy_mask_heart.png")
     print("✓ Greedy with Heart Mask: examples/greedy_mask_heart.png")
 
     # Distance square layout with mask
     twc_square = TrueWordCloud(
-        values=values, method="square", base_font_size=70, min_font_size=12
-    )
-    image_square = twc_square.generate(
+        values=values,
+        method="square",
+        base_font_size=70,
+        min_font_size=12,
         mask=mask_img,
-        mask_outline=True,
+        mask_shape_transparency=False,
+        show_mask_outline=True,
         mask_outline_color="#000000",
         mask_outline_width=2,
     )
+    image_square = twc_square.generate()
     image_square.save("examples/square_mask_heart.png")
     print("✓ Square with Heart Mask: examples/square_mask_heart.png")
 
@@ -404,13 +410,13 @@ def example_with_mask():
     twc_dist = TrueWordCloud(
         values=values,
         method="distance_transform",
-    )
-    image_dist = twc_dist.generate(
         mask=mask_img,
-        mask_outline=True,
+        mask_shape_transparency=False,
+        show_mask_outline=True,
         mask_outline_color="#000000",
         mask_outline_width=2,
     )
+    image_dist = twc_dist.generate()
     image_dist.save("examples/distance_transform_mask_heart.png")
     print(
         "✓ Distance Transform with Heart Mask: examples/distance_transform_mask_heart.png"
@@ -429,16 +435,15 @@ def example_with_colored_mask():
         values=values,
         method="greedy",  # try also: "greedy", "distance_transform"
         seed=123,
+        mask=color_mask_img,
+        mask_shape_transparency=True,
+        show_mask_outline=True,
+        mask_outline_color="#F80202",
+        mask_outline_width=2,
         use_mask_colors=True,
-        mask_shape_mode="colors",
     )
 
-    image, stats = twc_color.generate_with_stats(
-        mask=color_mask_img,
-        mask_outline=True,
-        mask_outline_color="#00AAFF",
-        mask_outline_width=2,
-    )
+    image, stats = twc_color.generate_with_stats()
     image.save("examples/greedy_mask_heart_colored.png")
     print("✓ Greedy with colored Heart Mask: examples/greedy_mask_heart_colored.png")
     print(
@@ -450,15 +455,14 @@ def example_with_colored_mask():
         values=values,
         method="square",
         seed=123,
-        use_mask_colors=True,
-        mask_shape_mode="colors",
-    )
-    image_square, stats_square = twc_color_square.generate_with_stats(
         mask=color_mask_img,
-        mask_outline=True,
-        mask_outline_color="#00AAFF",
+        mask_shape_transparency=True,
+        show_mask_outline=True,
+        mask_outline_color="#F80202",
         mask_outline_width=2,
+        use_mask_colors=True,
     )
+    image_square, stats_square = twc_color_square.generate_with_stats()
     image_square.save("examples/square_mask_heart_colored.png")
     print("✓ Square with colored Heart Mask: examples/square_mask_heart_colored.png")
     print(
@@ -470,15 +474,14 @@ def example_with_colored_mask():
         values=values,
         method="distance_transform",
         seed=123,
-        use_mask_colors=True,
-        mask_shape_mode="colors",
-    )
-    image_dist, stats_dist = twc_color_dist.generate_with_stats(
         mask=color_mask_img,
-        mask_outline=True,
-        mask_outline_color="#00AAFF",
+        mask_shape_transparency=True,
+        show_mask_outline=True,
+        mask_outline_color="#F80202",
         mask_outline_width=2,
+        use_mask_colors=True,
     )
+    image_dist, stats_dist = twc_color_dist.generate_with_stats()
     image_dist.save("examples/distance_transform_mask_heart_colored.png")
     print(
         "✓ Distance Transform with colored Heart Mask: examples/distance_transform_mask_heart_colored.png"

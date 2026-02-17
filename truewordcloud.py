@@ -85,6 +85,7 @@ class TrueWordCloud:
         show_mask_outline: bool = False,
         mask_outline_color=(0, 0, 0),
         mask_outline_width: int = 1,
+        use_transparent_background: bool = False,
     ):
 
         self.values = values
@@ -105,6 +106,7 @@ class TrueWordCloud:
         self.show_mask_outline = show_mask_outline
         self.mask_outline_color = mask_outline_color
         self.mask_outline_width = mask_outline_width
+        self.use_transparent_background = use_transparent_background
         self._mask_used_color_arr = None
         self.rng = random.Random(seed)
 
@@ -1032,10 +1034,15 @@ class TrueWordCloud:
             else:
                 width = height = 300
 
-            image = PILImage.new(
-                "RGB", (max(1, width), max(1, height)), self.background_color
-            )
-            draw = PILImageDraw.Draw(image)
+            if self.use_transparent_background:
+                image = PILImage.new(
+                    "RGBA", (max(1, width), max(1, height)), (0, 0, 0, 0)
+                )
+            else:
+                image = PILImage.new(
+                    "RGB", (max(1, width), max(1, height)), self.background_color
+                )
+
             msg = "No words could be placed."
             draw.text((10, 10), msg, fill=(150, 150, 150))
             self.words = []
@@ -1103,7 +1110,11 @@ class TrueWordCloud:
         width = (max_xi - min_xi + 1) + 2 * pad
         height = (max_yi - min_yi + 1) + 2 * pad
 
-        image = PILImage.new("RGB", (width, height), self.background_color)
+        if self.use_transparent_background:
+            image = PILImage.new("RGBA", (width, height), (0, 0, 0, 0))
+        else:
+            image = PILImage.new("RGB", (width, height), self.background_color)
+
         draw = PILImageDraw.Draw(image)
 
         offset_x = -min_xi + pad
@@ -1185,6 +1196,22 @@ class TrueWordCloud:
         width, height = image.size
         img_arr = np.array(image)
 
+        # Determine channel count (RGB=3, RGBA=4)
+        channels = 1 if img_arr.ndim == 2 else img_arr.shape[2]
+
+        # Normalize outline color to match image channels
+        if channels == 4:
+            # Make outline fully opaque
+            if len(color) == 3:
+                color_px = (color[0], color[1], color[2], 255)
+            else:
+                color_px = (color[0], color[1], color[2], color[3])
+        elif channels == 3:
+            color_px = (color[0], color[1], color[2])
+        else:
+            # grayscale fallback
+            color_px = 255
+
         # mask pixels -> wordcloud coords
         x_wc = xs - mask_cx
         y_wc = ys - mask_cy
@@ -1203,9 +1230,14 @@ class TrueWordCloud:
                 fx = px + dx
                 fy = py + dy
                 ok = (fx >= 0) & (fx < width) & (fy >= 0) & (fy < height)
-                img_arr[fy[ok], fx[ok], :] = color
 
-        return PILImage.fromarray(img_arr, mode="RGB")
+                if channels in (3, 4):
+                    img_arr[fy[ok], fx[ok], :] = color_px
+                else:
+                    img_arr[fy[ok], fx[ok]] = color_px
+
+        # IMPORTANT: return in the same mode as the input image
+        return PILImage.fromarray(img_arr, mode=image.mode)
 
     def generate_with_stats(
         self,
@@ -1304,6 +1336,9 @@ def main():
         mask_shape_transparency=True,
         use_mask_colors=True,
         show_mask_outline=True,
+        use_transparent_background=True,
+        mask_outline_color="#FF0000",
+        mask_outline_width=3,
     )
 
     image, stats = twc_color.generate_with_stats()
@@ -1335,6 +1370,8 @@ def main():
         mask_shape_transparency=True,
         use_mask_colors=True,
         show_mask_outline=True,
+        mask_outline_color="#FF0000",
+        mask_outline_width=3,
     )
 
     image, stats = twc_color.generate_with_stats()
@@ -1364,6 +1401,8 @@ def main():
         mask_shape_transparency=True,
         use_mask_colors=True,
         show_mask_outline=True,
+        mask_outline_color="#FF0000",
+        mask_outline_width=3,
     )
 
     image, stats = twc_color.generate_with_stats()
